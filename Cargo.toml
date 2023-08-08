@@ -1,0 +1,64 @@
+[package]
+name = "bls-verify-gadget"
+version = "0.1.0"
+authors = [
+  "Weiji Guo, Lightec",
+]
+description = "Lightec's R1CS gadget for BLS signature verification over BLS12-381, based on arkworks."
+repository = "https://github.com/lightec-xyz/bls-verify-gadget"
+# documentation = "https://docs.rs/lightec-bls-verify-gadget/"
+keywords = ["cryptography", "commitments", "zkSNARK"]
+categories = ["cryptography"]
+include = ["Cargo.toml", "src", "README.md", "LICENSE-APACHE", "LICENSE-MIT"]
+license = "MIT/Apache-2.0"
+edition = "2021"
+
+[dependencies]
+ark-ff = { version = "^0.4.0", default-features = false }
+ark-ec = { version = "^0.4.0", default-features = false }
+ark-std = { version = "^0.4.0", default-features = true, optional = true }
+ark-r1cs-std = { version = "^0.4.0", default-features = false, optional = true }
+
+ark-bls12-381 = { version = "^0.4.0", default-features = true }
+
+ark-relations = { version = "^0.4.0", default-features = false, optional = true }
+ark-snark = { version = "^0.4.0", default-features = false }
+
+ark-serialize = { version = "^0.4.0", default-features = false }
+
+ark-crypto-primitives = { version = "^0.4.0", default-features = true, features = ["signature"]}
+blake2 = { version = "0.10" }
+digest = "0.10"
+derivative = { version = "2.0", features = ["use_core"] }
+tracing = { version = "0.1", default-features = false, features = [ "attributes" ], optional = true }
+
+[dev-dependencies]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+incremental = true
+debug = true
+panic = 'abort'
+
+[profile.test]
+opt-level = 3
+debug-assertions = true
+incremental = true
+debug = true
+
+[profile.dev]
+opt-level = 0
+panic = 'abort'
+
+[features]
+default = [ "std", "parallel", "r1cs" ]
+std = [ "ark-ff/std", "ark-ec/std", "ark-std/std", "ark-relations/std", "ark-serialize/std", "ark-crypto-primitives/std" ]
+r1cs = [ "ark-relations", "ark-r1cs-std", "ark-crypto-primitives/r1cs" ]
+parallel = [ "std", "ark-ff/parallel", "ark-ec/parallel", "ark-std/parallel" ]
+
+# [[bench]]
+# name = "bls-gadget-benches"
+# path = "benches/bench.rs"
+# harness = false
+# required-features = ["std"]
