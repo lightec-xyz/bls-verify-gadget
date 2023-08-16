@@ -1,6 +1,6 @@
 use ark_crypto_primitives::signature::SignatureScheme;
 use ark_crypto_primitives::Error;
-use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G2Affine};
+use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine};
 
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use ark_ec::pairing::{Pairing, PairingOutput};
@@ -9,7 +9,7 @@ use ark_ec::bls12::Bls12;
 use ark_ec::hashing::{HashToCurve, map_to_curve_hasher::MapToCurveBasedHasher, curve_maps::wb::WBMap};
 use ark_ff::field_hashers::DefaultFieldHasher;
 
-use ark_std::{rand::Rng, ops::Mul, UniformRand};
+use ark_std::{rand::Rng, ops::Mul, ops::Neg, UniformRand, One};
 
 use std::borrow::Borrow;
 use sha2::Sha256;
@@ -140,20 +140,14 @@ impl SignatureScheme for BLS {
         message: &[u8],
         signature: &Signature,
     ) -> Result<bool, Error> {
-        let g1 : &G1Projective = &parameters.g1_generator;
-        let g1_affine : <Bls12<ark_bls12_381::Config> as Pairing>::G1Affine = (*g1).into();
+        let g1 : G1Affine = parameters.g1_generator.clone().into();
+        let g1_neg = G1Projective::from(g1.neg());
 
-        let pk_affine : <Bls12<ark_bls12_381::Config> as Pairing>::G1Affine = (*pk.as_ref()).into();
-
-        let h_affine : G2Affine = hash_to_g2(message);
+        let h = hash_to_g2(message);
         
-        let sig_affine : <Bls12<ark_bls12_381::Config> as Pairing>::G2Affine = (*signature.as_ref()).into();
+        let bls_paired : PairingOutput<Bls12_381> = Bls12::multi_pairing([g1_neg, *pk.as_ref()], [*signature.as_ref(), h]);
 
-        //TODO optimizations
-        let e1 : PairingOutput<Bls12_381> = Bls12::pairing(g1_affine, sig_affine);
-        let e2 : PairingOutput<Bls12_381> = Bls12::pairing(pk_affine, h_affine);
-
-        Ok(e1.eq(&e2))
+        Ok(bls_paired.0.is_one())
     }
 
     fn randomize_public_key(
@@ -173,7 +167,7 @@ impl SignatureScheme for BLS {
     }
 }
 
-pub fn hash_to_g2(message: &[u8]) -> G2Affine {
+pub fn hash_to_g2(message: &[u8]) -> G2Projective {
     let curve_hasher = MapToCurveBasedHasher::<
         ark_ec::short_weierstrass::Projective<ark_bls12_381::g2::Config>,
         DefaultFieldHasher<Sha256, 128>,
@@ -182,5 +176,5 @@ pub fn hash_to_g2(message: &[u8]) -> G2Affine {
     ::new(&[1])
     .unwrap();
 
-    curve_hasher.hash(message).unwrap()
+    G2Projective::from(curve_hasher.hash(message).unwrap())
 }
