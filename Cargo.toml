@@ -34,11 +34,6 @@ tracing = { version = "0.1", default-features = false, features = [ "attributes"
 
 sha2 = { version = "0.10", default-features = false }
 
-[patch.crates-io]
-ark-ff = { path = "../algebra/ff" }
-ark-ec = { path = "../algebra/ec" }
-ark-serialize = { path = "../algebra/serialize" }
-
 [dev-dependencies]
 
 [profile.release]
