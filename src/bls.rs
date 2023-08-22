@@ -168,12 +168,13 @@ impl SignatureScheme for BLS {
 }
 
 pub fn hash_to_g2(message: &[u8]) -> G2Projective {
+    let domain = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
     let curve_hasher = MapToCurveBasedHasher::<
         ark_ec::short_weierstrass::Projective<ark_bls12_381::g2::Config>,
         DefaultFieldHasher<Sha256, 128>,
         WBMap<ark_bls12_381::g2::Config>,
     >
-    ::new(&[1])
+    ::new(domain)
     .unwrap();
 
     G2Projective::from(curve_hasher.hash(message).unwrap())
