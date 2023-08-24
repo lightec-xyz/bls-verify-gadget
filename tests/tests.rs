@@ -33,6 +33,17 @@ struct SignTestInput {
     message: String,
 }
 
+fn read_sign_test_cases() -> Result<Vec<SignTestCase>, Box<dyn std::error::Error>> {
+    let file_contents = read_files_in_directory("test_cases/sign")?;
+    let mut test_cases = Vec::new();
+
+    for content in file_contents {
+        let test_case = serde_json::from_str(&content)?;
+        test_cases.push(test_case);
+    }
+
+    Ok(test_cases)
+}
 
 
 #[cfg(test)]
@@ -40,7 +51,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn it_works() {
+    fn test_sign() {
+        
         assert_eq!(2 + 2, 4);
     }
 }
