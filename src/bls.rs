@@ -1,29 +1,44 @@
 use ark_crypto_primitives::signature::SignatureScheme;
 use ark_crypto_primitives::Error;
-use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine};
+use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine, G2Affine};
 
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
+use ark_ff::{BigInt, BigInteger256, BigInteger};
+use ark_serialize::{
+    buffer_byte_size, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
+    CanonicalSerializeWithFlags, Compress, EmptyFlags, Flags, SerializationError, Valid, Validate,
+};
 use ark_ec::pairing::{Pairing, PairingOutput};
-use ark_ec::Group;
+use ark_ec::{Group, CurveGroup};
 use ark_ec::bls12::Bls12;
 use ark_ec::hashing::{HashToCurve, map_to_curve_hasher::MapToCurveBasedHasher, curve_maps::wb::WBMap};
 use ark_ff::field_hashers::DefaultFieldHasher;
+use num_bigint;
 
 use ark_std::{rand::Rng, ops::Mul, ops::Neg, UniformRand, One};
 
 use std::borrow::Borrow;
+use std::str::from_boxed_utf8_unchecked;
 use sha2::Sha256;
+use hex;
 
 pub use ark_ec::pairing::*;
 
-#[derive(Default)]
+// #[derive(Default)]
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Parameters {
     pub g1_generator : G1Projective,
 }
 
+impl Default for Parameters {
+    fn default() -> Self {
+        Parameters {
+            g1_generator : G1Projective::generator(),
+        }
+    }
+}
+
 #[derive(Default)]
-#[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PrivateKey(Fr);
 
 impl From<Fr> for PrivateKey {
@@ -32,6 +47,47 @@ impl From<Fr> for PrivateKey {
     }
 }
 
+//
+impl From<String> for PrivateKey {
+    fn from(sk: String) -> PrivateKey {
+        let sk_bytes = hex::decode(sk).unwrap();
+        PrivateKey::deserialize_compressed(&sk_bytes[..]).unwrap()    
+    }
+}
+
+impl From<&[u8]> for PrivateKey {
+    fn from(bytes: &[u8]) -> PrivateKey {
+        PrivateKey::deserialize_compressed(&bytes[..]).unwrap()  
+    }
+}
+
+//[u64;4] must be MontBackend representation
+impl From<[u64;4]> for PrivateKey {
+    fn from(sk:[u64;4]) -> PrivateKey {
+        let val = BigInt(sk);
+        PrivateKey(Fr::from(val))
+    }
+}
+
+
+
+impl Into<String> for PrivateKey{
+    fn into(self) -> String {
+        let mut serialized = vec![0; 32];
+        self.serialize_compressed(&mut serialized[..]).unwrap();
+        hex::encode(serialized)
+    }
+}
+
+impl Into<Vec<u8>> for PrivateKey{
+    fn into(self) -> Vec<u8> {
+        let mut serialized = vec![0; 32];
+        self.serialize_compressed(&mut serialized[..]).unwrap();
+        serialized
+    }
+}
+
+
 impl AsRef<Fr> for PrivateKey {
     fn as_ref(&self) -> &Fr {
         &self.0
@@ -39,7 +95,7 @@ impl AsRef<Fr> for PrivateKey {
 }
 
 #[derive(Default)]
-#[derive(Clone, Eq, Debug, PartialEq, Hash, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Copy, Eq, Debug, PartialEq, Hash, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PublicKey(G1Projective);
 
 impl From<G1Projective> for PublicKey {
@@ -58,6 +114,23 @@ impl From<&PrivateKey> for PublicKey {
     fn from(sk: &PrivateKey) -> PublicKey {
         let generator = &<Bls12::<ark_bls12_381::Config> as Pairing>::G1::generator();
         PublicKey::from(generator.mul(sk.as_ref()))
+    }
+}
+
+
+impl Into<String> for PublicKey{
+    fn into(self) -> String {
+        let mut serialized = vec![0; 48];
+        self.serialize_compressed(&mut serialized[..]).unwrap();
+        hex::encode(serialized)
+    }
+}
+
+impl Into<Vec<u8>> for PublicKey{
+    fn into(self) -> Vec<u8> {
+        let mut serialized = vec![0;48];
+        self.serialize_compressed(&mut serialized[..]).unwrap();
+        serialized
     }
 }
 
@@ -129,6 +202,7 @@ impl SignatureScheme for BLS {
         _rng: &mut R,
     ) -> Result<Self::Signature, Error> {
         let h : G2Projective = G2Projective::from(hash_to_g2(message));
+        println!("sign after hash_to_g2 {:?}", h);
         let signature = Self::Signature::from(h.mul(sk.as_ref()));
 
         Ok(signature)
@@ -177,5 +251,7 @@ pub fn hash_to_g2(message: &[u8]) -> G2Projective {
     ::new(domain)
     .unwrap();
 
-    G2Projective::from(curve_hasher.hash(message).unwrap())
+    let g2_point = G2Projective::from(curve_hasher.hash(message).unwrap()); 
+    // println!("hash to g2 point: {:?}", g2_point);
+    g2_point
 }
