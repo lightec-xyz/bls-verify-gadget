@@ -87,8 +87,7 @@ mod tests {
         
                     serialized.resize(size, 0u8);
                     signature.serialize_compressed(&mut serialized[..]).unwrap();
-                    assert_eq!(&output[2..], 
-                        hex::encode(serialized));          
+                    assert_eq!(&output[2..], hex::encode(serialized));          
                 }
             }
         }
