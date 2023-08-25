@@ -35,7 +35,7 @@ struct SignTestInput {
 }
 
 fn read_sign_test_cases() -> Vec<SignTestCase> {
-    let file_contents = read_files_in_directory("test_cases/sign")
+    let file_contents = read_files_in_directory("tests/test_cases/sign")
         .unwrap_or_else(|err| panic!("Error reading test cases: {:?}", err));
 
     let mut test_cases = Vec::new();
@@ -54,7 +54,7 @@ fn read_sign_test_cases() -> Vec<SignTestCase> {
 #[cfg(test)]
 mod tests {
     use ark_crypto_primitives::signature::SignatureScheme;
-    use ark_serialize::Compress;
+    use ark_serialize::{Compress, CanonicalSerialize};
     use bls_verify_gadget::bls::{PrivateKey, Parameters, BLS};
 
     use super::*;
@@ -64,7 +64,7 @@ mod tests {
         let test_cases = read_sign_test_cases();
 
         for test_case in test_cases {    
-            let private_bytes = hex::decode(&test_case.input.privkey[2..]).unwrap();
+            let mut private_bytes = hex::decode(&test_case.input.privkey[2..]).unwrap();
             let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
             private_bytes.reverse();
             let private_key = PrivateKey::from(&private_bytes[..]);
@@ -72,15 +72,25 @@ mod tests {
             let parameters = Parameters::default();
             let mut rng = ark_std::test_rng();
 
-            let signature = BLS::sign(&parameters, &private_key, &message_bytes, &mut rng).unwrap();
- 
-            let mut serialized = vec![0u8; 0];
-            let mut size = 0;
-            size += signature.serialized_size(Compress::Yes);
+            let sign_result = BLS::sign(&parameters, &private_key, &message_bytes, &mut rng);
+
+            match test_case.output {
+                None => if let Ok(signature) = sign_result {
+                    panic!("expected not to be signed, but signed")
+                }
+                Some(output) => {
+                    let signature = sign_result.unwrap();
+
+                    let mut serialized = vec![0u8; 0];
+                    let mut size = 0;
+                    size += signature.serialized_size(Compress::Yes);
         
-            serialized.resize(size, 0u8);
-            signature.serialize_compressed(&mut serialized[..]).unwrap();
-            // assert_eq!(test_case.output, hex::encode(serialized));          
+                    serialized.resize(size, 0u8);
+                    signature.serialize_compressed(&mut serialized[..]).unwrap();
+                    assert_eq!(&output[2..], 
+                        hex::encode(serialized));          
+                }
+            }
         }
     }
 }
