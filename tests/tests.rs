@@ -11,7 +11,7 @@ fn read_files_in_directory(directory: &str) -> Result<Vec<String>, std::io::Erro
         let entry = entry?;
         let path = entry.path();
 
-        if path.is_file() {
+        if path.is_file() && path.file_name().unwrap().to_str().unwrap().ends_with(".json") {
             let mut file = File::open(&path)?;
             let mut content = String::new();
             file.read_to_string(&mut content)?;
