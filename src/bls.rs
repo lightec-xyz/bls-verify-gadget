@@ -16,6 +16,7 @@ use num_bigint;
 
 use ark_std::{rand::Rng, ops::Mul, ops::Neg, UniformRand, One};
 
+
 use std::borrow::Borrow;
 use std::str::from_boxed_utf8_unchecked;
 use sha2::Sha256;
@@ -49,9 +50,16 @@ impl From<Fr> for PrivateKey {
 
 //
 impl From<String> for PrivateKey {
-    fn from(sk: String) -> PrivateKey {
-        let sk_bytes = hex::decode(sk).unwrap();
-        PrivateKey::deserialize_compressed(&sk_bytes[..]).unwrap()    
+    fn from(s: String) -> PrivateKey {  
+        let bytes: Vec<u8> = hex::decode(s).unwrap();
+        PrivateKey::deserialize_compressed(&bytes[..]).unwrap()    
+    }
+}
+
+impl From<&str> for PrivateKey {
+    fn from(s: &str) -> PrivateKey {
+        let bytes = hex::decode(s).unwrap();
+        PrivateKey::deserialize_compressed(&bytes[..]).unwrap()    
     }
 }
 
@@ -117,6 +125,22 @@ impl From<&PrivateKey> for PublicKey {
     }
 }
 
+impl From<String> for PublicKey {
+    fn from(s:String) -> PublicKey {
+        let bytes: Vec<u8> = hex::decode(s).unwrap();
+        PublicKey::deserialize_compressed(&bytes[..]).unwrap()    
+    }
+}
+
+impl From<&str> for PublicKey {
+    fn from(s:&str) -> PublicKey {
+        let bytes = hex::decode(s).unwrap();
+        PublicKey::deserialize_compressed(&bytes[..]).unwrap()    
+    }
+}
+
+
+
 
 impl Into<String> for PublicKey{
     fn into(self) -> String {
@@ -144,7 +168,7 @@ impl PublicKey {
 }
 
 #[derive(Default)]
-#[derive(Clone, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Signature(G2Projective);
 
 impl From<G2Projective> for Signature {
@@ -156,6 +180,37 @@ impl From<G2Projective> for Signature {
 impl AsRef<G2Projective> for Signature {
     fn as_ref(&self) -> &G2Projective {
         &self.0
+    }
+}
+
+impl From<String> for Signature {
+    fn from(s:String) -> Signature {
+        let bytes = hex::decode(s).unwrap();
+        Signature::deserialize_compressed(&bytes[..]).unwrap()    
+    }
+}
+
+impl From<&str> for Signature {
+    fn from(s:&str) -> Signature {
+        let bytes = hex::decode(s).unwrap();
+        Signature::deserialize_compressed(&bytes[..]).unwrap()    
+    }
+}
+
+
+impl Into<String> for Signature{
+    fn into(self) -> String {
+        let mut serialized = vec![0; 96];
+        self.serialize_compressed(&mut serialized[..]).unwrap();
+        hex::encode(serialized)
+    }
+}
+
+impl Into<Vec<u8>> for Signature{
+    fn into(self) -> Vec<u8> {
+        let mut serialized = vec![0;96];
+        self.serialize_compressed(&mut serialized[..]).unwrap();
+        serialized
     }
 }
 

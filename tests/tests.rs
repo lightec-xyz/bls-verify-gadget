@@ -50,12 +50,40 @@ fn read_sign_test_cases() -> Vec<SignTestCase> {
     test_cases
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct VerifyTestCase {
+    input: VerifyTestInput,
+    output: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct VerifyTestInput {
+    pubkey: String,
+    message: String,
+    signature: String,
+}
+
+fn read_verify_test_cases() -> Vec<VerifyTestCase> {
+    let file_contents = read_files_in_directory("tests/test_cases/verify")
+        .unwrap_or_else(|err| panic!("Error reading test cases: {:?}", err));
+
+    let mut test_cases = Vec::new();
+
+    for content in file_contents {
+        let test_case = serde_json::from_str(&content)
+            .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
+        
+        test_cases.push(test_case);
+    }
+
+    test_cases
+}
 
 #[cfg(test)]
 mod tests {
     use ark_crypto_primitives::signature::SignatureScheme;
     use ark_serialize::{Compress, CanonicalSerialize};
-    use bls_verify_gadget::bls::{PrivateKey, Parameters, BLS};
+    use bls_verify_gadget::bls::{PrivateKey, Parameters, BLS, PublicKey, Signature};
 
     use super::*;
 
@@ -92,5 +120,40 @@ mod tests {
             }
         }
     }
+
+    // #[test]
+    // fn test_verify() {
+    //     let test_cases = read_verify_test_cases();
+
+    //     for test_case in test_cases {    
+    //         let public_bytes = hex::decode(&test_case.input.pubkey[2..]).unwrap();
+    //         let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
+    //         let sign_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
+           
+    //         let parameters = Parameters::default();
+    //         let public_key = public_bytes.into();
+    //         let signature:Signature = sign_bytes.into();
+
+
+    //         let sign_result = BLS::sign(&parameters, &private_key, &message_bytes, &mut rng);
+
+    //         match test_case.output {
+    //             None => if let Ok(signature) = sign_result {
+    //                 panic!("expected not to be signed, but signed")
+    //             }
+    //             Some(output) => {
+    //                 let signature = sign_result.unwrap();
+
+    //                 let mut serialized = vec![0u8; 0];
+    //                 let mut size = 0;
+    //                 size += signature.serialized_size(Compress::Yes);
+        
+    //                 serialized.resize(size, 0u8);
+    //                 signature.serialize_compressed(&mut serialized[..]).unwrap();
+    //                 assert_eq!(&output[2..], hex::encode(serialized));          
+    //             }
+    //         }
+    //     }
+    // }
 }
 
