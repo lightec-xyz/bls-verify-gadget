@@ -2,11 +2,8 @@ use ark_crypto_primitives::signature::SignatureScheme;
 use ark_crypto_primitives::Error;
 use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine, G2Affine};
 
-use ark_ff::{BigInt, BigInteger256, BigInteger};
-use ark_serialize::{
-    buffer_byte_size, CanonicalDeserialize, CanonicalDeserializeWithFlags, CanonicalSerialize,
-    CanonicalSerializeWithFlags, Compress, EmptyFlags, Flags, SerializationError, Valid, Validate,
-};
+use ark_ff::{BigInt};
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ec::{Group, CurveGroup};
 use ark_ec::bls12::Bls12;
@@ -24,7 +21,6 @@ use hex;
 
 pub use ark_ec::pairing::*;
 
-// #[derive(Default)]
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Parameters {
     pub g1_generator : G1Projective,
@@ -78,7 +74,6 @@ impl From<[u64;4]> for PrivateKey {
 }
 
 
-
 impl Into<String> for PrivateKey{
     fn into(self) -> String {
         let mut serialized = vec![0; 32];
@@ -94,7 +89,6 @@ impl Into<Vec<u8>> for PrivateKey{
         serialized
     }
 }
-
 
 impl AsRef<Fr> for PrivateKey {
     fn as_ref(&self) -> &Fr {
@@ -138,8 +132,6 @@ impl From<&str> for PublicKey {
         PublicKey::deserialize_compressed(&bytes[..]).unwrap()    
     }
 }
-
-
 
 
 impl Into<String> for PublicKey{
@@ -306,7 +298,5 @@ pub fn hash_to_g2(message: &[u8]) -> G2Projective {
     ::new(domain)
     .unwrap();
 
-    let g2_point = G2Projective::from(curve_hasher.hash(message).unwrap()); 
-    // println!("hash to g2 point: {:?}", g2_point);
-    g2_point
+    G2Projective::from(curve_hasher.hash(message).unwrap())
 }
