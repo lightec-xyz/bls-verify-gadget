@@ -1,21 +1,18 @@
 use ark_crypto_primitives::signature::SignatureScheme;
 use ark_crypto_primitives::Error;
-use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine, G2Affine};
+use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine};
 
-use ark_ff::{BigInt};
+use ark_ff::BigInt;
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
 use ark_ec::pairing::{Pairing, PairingOutput};
-use ark_ec::{Group, CurveGroup};
+use ark_ec::Group;
 use ark_ec::bls12::Bls12;
 use ark_ec::hashing::{HashToCurve, map_to_curve_hasher::MapToCurveBasedHasher, curve_maps::wb::WBMap};
 use ark_ff::field_hashers::DefaultFieldHasher;
-use num_bigint;
 
 use ark_std::{rand::Rng, ops::Mul, ops::Neg, UniformRand, One};
 
-
 use std::borrow::Borrow;
-use std::str::from_boxed_utf8_unchecked;
 use sha2::Sha256;
 use hex;
 
@@ -73,7 +70,6 @@ impl From<[u64;4]> for PrivateKey {
     }
 }
 
-
 impl Into<String> for PrivateKey{
     fn into(self) -> String {
         let mut serialized = vec![0; 32];
@@ -89,7 +85,6 @@ impl Into<Vec<u8>> for PrivateKey{
         serialized
     }
 }
-
 impl AsRef<Fr> for PrivateKey {
     fn as_ref(&self) -> &Fr {
         &self.0
@@ -132,7 +127,6 @@ impl From<&str> for PublicKey {
         PublicKey::deserialize_compressed(&bytes[..]).unwrap()    
     }
 }
-
 
 impl Into<String> for PublicKey{
     fn into(self) -> String {
@@ -249,7 +243,6 @@ impl SignatureScheme for BLS {
         _rng: &mut R,
     ) -> Result<Self::Signature, Error> {
         let h : G2Projective = G2Projective::from(hash_to_g2(message));
-        println!("sign after hash_to_g2 {:?}", h);
         let signature = Self::Signature::from(h.mul(sk.as_ref()));
 
         Ok(signature)
