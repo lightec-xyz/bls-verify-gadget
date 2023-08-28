@@ -79,6 +79,28 @@ fn read_verify_test_cases() -> Vec<VerifyTestCase> {
     test_cases
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct SignAggrTestCase {
+    input: Vec<String>,
+    output: Option<String>,
+}
+
+fn read_sign_aggr_test_cases() -> Vec<SignAggrTestCase> {
+    let file_contents = read_files_in_directory("tests/test_cases/aggregate")
+        .unwrap_or_else(|err| panic!("Error reading test cases: {:?}", err));
+
+    let mut test_cases = Vec::new();
+
+    for content in file_contents {
+        let test_case = serde_json::from_str(&content)
+            .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
+        
+        test_cases.push(test_case);
+    }
+
+    test_cases
+}
+
 #[cfg(test)]
 mod tests {
     use ark_crypto_primitives::signature::SignatureScheme;
@@ -135,6 +157,31 @@ mod tests {
 
             let res = BLS::verify(&parameters, &public_key, &message_bytes, &signature).unwrap();
             assert_eq!(test_case.output, res);
+        }
+    }
+
+    #[test]
+    fn test_sign_aggr() {
+        let test_cases = read_sign_aggr_test_cases();
+
+        for test_case in test_cases {
+            let mut sigs = Vec::new();
+            for sign_str in test_case.input {
+                sigs.push(Signature::from(&sign_str[2..]));
+            }
+
+            let aggregated_sig = Signature::aggregate(sigs);
+
+            match test_case.output {
+                None => {
+                    // todo
+                    panic!("Signature aggregate does not handle when the input is null")
+                }
+                Some(output) => {
+                    let aggr_sig_str: String =  aggregated_sig.into(); 
+                    assert_eq!(output[2..], aggr_sig_str);
+                }
+            }
         }
     }
 }
