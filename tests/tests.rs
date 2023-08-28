@@ -121,39 +121,21 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn test_verify() {
-    //     let test_cases = read_verify_test_cases();
+    #[test]
+    fn test_verify() {
+        let test_cases = read_verify_test_cases();
 
-    //     for test_case in test_cases {    
-    //         let public_bytes = hex::decode(&test_case.input.pubkey[2..]).unwrap();
-    //         let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
-    //         let sign_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
+        for test_case in test_cases {    
+            let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
            
-    //         let parameters = Parameters::default();
-    //         let public_key = public_bytes.into();
-    //         let signature:Signature = sign_bytes.into();
+            let parameters = Parameters::default();
+            let public_key = PublicKey::from(&test_case.input.pubkey[2..]);
+            let signature = Signature::from(&test_case.input.signature[2..]);
 
 
-    //         let sign_result = BLS::sign(&parameters, &private_key, &message_bytes, &mut rng);
-
-    //         match test_case.output {
-    //             None => if let Ok(signature) = sign_result {
-    //                 panic!("expected not to be signed, but signed")
-    //             }
-    //             Some(output) => {
-    //                 let signature = sign_result.unwrap();
-
-    //                 let mut serialized = vec![0u8; 0];
-    //                 let mut size = 0;
-    //                 size += signature.serialized_size(Compress::Yes);
-        
-    //                 serialized.resize(size, 0u8);
-    //                 signature.serialize_compressed(&mut serialized[..]).unwrap();
-    //                 assert_eq!(&output[2..], hex::encode(serialized));          
-    //             }
-    //         }
-    //     }
-    // }
+            let res = BLS::verify(&parameters, &public_key, &message_bytes, &signature).unwrap();
+            assert_eq!(test_case.output, res);
+        }
+    }
 }
 
