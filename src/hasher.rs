@@ -66,12 +66,12 @@ impl<const SEC_PARAM: usize> DefaultFieldHasherWithCons<SEC_PARAM>
                 c_bytes_le.reverse();
 
                 let (tail, head)
-                    // magic value 5 here according to 381 and logic of to_constraint_field
-                    = c_bytes_le.split_at(5);
+                    = c_bytes_le.split_at(1);
                 let f_head : Vec<FpVarDef> = head.to_constraint_field().unwrap();
                 let f_tail : Vec<FpVarDef> = tail.to_constraint_field().unwrap();
 
                 // TODO clean up value move and clone()
+                // magic value 32 = 2^5 here according to 381 and logic of to_constraint_field
                 let f32 = FpVarDef::constant(ConstraintF::from(32));
                 let mut f = f_head[0].clone();
                 f *= f32;
@@ -114,7 +114,7 @@ pub struct CurveMapperWithCons
 impl CurveMapperWithCons
 {
     fn new() -> Result<Self, HashToCurveError> {
-        todo!()
+        Ok(CurveMapperWithCons{})
     }
 
     fn map_to_curve(&self, point: Fp2VarDef) -> Result<G2VarDef, HashToCurveError> {
