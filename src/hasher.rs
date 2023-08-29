@@ -35,7 +35,7 @@ impl<const SEC_PARAM: usize> DefaultFieldHasherWithCons<SEC_PARAM>
         
         // The final output of `hash_to_field` will be an array of field
         // elements from TargetField, each of size `len_per_elem`.
-        let len_per_base_elem = get_len_per_elem::<BaseField, SEC_PARAM>();
+        let len_per_base_elem = Self::get_len_per_elem::<BaseField>();
 
         let sha256 = Sha256Gadget::default();
 
@@ -53,7 +53,7 @@ impl<const SEC_PARAM: usize> DefaultFieldHasherWithCons<SEC_PARAM>
         // The user imposes a `count` of elements of F_p^m to output per input msg,
         // each field element comprising `m` BasePrimeField elements.
         let len_in_bytes: usize = count * m * self.len_per_base_elem;
-        let uniform_bytes = expand(message, len_in_bytes);
+        let uniform_bytes = Self::expand(message, len_in_bytes);
 
         let mut output = Vec::with_capacity(count);
         let mut base_prime_field_elems = Vec::with_capacity(m);
@@ -65,16 +65,22 @@ impl<const SEC_PARAM: usize> DefaultFieldHasherWithCons<SEC_PARAM>
                 let mut c_bytes_le = constrainted_bytes.to_vec();
                 c_bytes_le.reverse();
 
+                let pos = ((ConstraintF::MODULUS_BIT_SIZE - 1) / 8) as usize;
                 let (tail, head)
-                    = c_bytes_le.split_at(1);
+                    = c_bytes_le.split_at(c_bytes_le.len() - pos);
                 let f_head : Vec<FpVarDef> = head.to_constraint_field().unwrap();
                 let f_tail : Vec<FpVarDef> = tail.to_constraint_field().unwrap();
 
                 // TODO clean up value move and clone()
-                // magic value 32 = 2^5 here according to 381 and logic of to_constraint_field
-                let f32 = FpVarDef::constant(ConstraintF::from(32));
+                let fp = FpVarDef::constant(ConstraintF::from(256));
                 let mut f = f_head[0].clone();
-                f *= f32;
+
+                let mut l = 0;
+                while l < tail.len() {
+                    f *= fp.clone();
+                    l += 1;
+                }
+
                 f += f_tail[0].clone();
 
                 base_prime_field_elems.push(f);
@@ -86,30 +92,29 @@ impl<const SEC_PARAM: usize> DefaultFieldHasherWithCons<SEC_PARAM>
 
         output
     }
+
+    fn expand(message: &[UInt8<ConstraintF>], len_in_bytes: usize) -> Vec<UInt8<ConstraintF>> {
+        todo!();
+    }
+
+    /// This function computes the length in bytes that a hash function should output
+    /// for hashing an element of type `Field`.
+    /// See section 5.1 and 5.3 of the
+    /// [IETF hash standardization draft](https://datatracker.ietf.org/doc/draft-irtf-cfrg-hash-to-curve/14/)
+    fn get_len_per_elem<F: Field>() -> usize {
+        // ceil(log(p))
+        let base_field_size_in_bits = F::BasePrimeField::MODULUS_BIT_SIZE as usize;
+        // ceil(log(p)) + security_parameter
+        let base_field_size_with_security_padding_in_bits = base_field_size_in_bits + SEC_PARAM;
+        // ceil( (ceil(log(p)) + security_parameter) / 8)
+        let bytes_per_base_field_elem =
+            ((base_field_size_with_security_padding_in_bits + 7) / 8) as u64;
+        bytes_per_base_field_elem as usize
+    }
+
 }
 
-fn expand(message: &[UInt8<ConstraintF>], len_in_bytes: usize) -> Vec<UInt8<ConstraintF>> {
-    todo!();
-}
-
-/// This function computes the length in bytes that a hash function should output
-/// for hashing an element of type `Field`.
-/// See section 5.1 and 5.3 of the
-/// [IETF hash standardization draft](https://datatracker.ietf.org/doc/draft-irtf-cfrg-hash-to-curve/14/)
-fn get_len_per_elem<F: Field, const SEC_PARAM: usize>() -> usize {
-    // ceil(log(p))
-    let base_field_size_in_bits = F::BasePrimeField::MODULUS_BIT_SIZE as usize;
-    // ceil(log(p)) + security_parameter
-    let base_field_size_with_security_padding_in_bits = base_field_size_in_bits + SEC_PARAM;
-    // ceil( (ceil(log(p)) + security_parameter) / 8)
-    let bytes_per_base_field_elem =
-        ((base_field_size_with_security_padding_in_bits + 7) / 8) as u64;
-    bytes_per_base_field_elem as usize
-}
-
-pub struct CurveMapperWithCons
-{
-}
+pub struct CurveMapperWithCons{}
 
 impl CurveMapperWithCons
 {
