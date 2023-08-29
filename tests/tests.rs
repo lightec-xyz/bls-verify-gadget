@@ -101,6 +101,35 @@ fn read_sign_aggr_test_cases() -> Vec<SignAggrTestCase> {
     test_cases
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct PubkeyAggrVerifyTestCase {
+    input: PubkeyAggrVerifyTestInput,
+    output: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct PubkeyAggrVerifyTestInput {
+    pubkeys: Vec<String>,
+    message: String,
+    signature: String,
+}
+
+fn read_pubkey_aggr_verify_test_cases() -> Vec<PubkeyAggrVerifyTestCase> {
+    let file_contents = read_files_in_directory("tests/test_cases/fast_aggregate_verify")
+        .unwrap_or_else(|err| panic!("Error reading test cases: {:?}", err));
+
+    let mut test_cases = Vec::new();
+
+    for content in file_contents {
+        let test_case = serde_json::from_str(&content)
+            .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
+        
+        test_cases.push(test_case);
+    }
+
+    test_cases
+}
+
 #[cfg(test)]
 mod tests {
     use ark_crypto_primitives::signature::SignatureScheme;
@@ -184,5 +213,27 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn test_pubkey_aggr_verify() {
+        let test_cases = read_pubkey_aggr_verify_test_cases();
+
+        for test_case in test_cases { 
+            let mut pubic_keys = Vec::new();
+            for pubkey_str in test_case.input.pubkeys {
+                pubic_keys.push(PublicKey::from(&pubkey_str[2..]));
+            }
+            let aggregated_pubkey = PublicKey::aggregate(pubic_keys);
+
+            let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
+            let parameters = Parameters::default();
+            let signature = Signature::from(&test_case.input.signature[2..]);
+
+
+            let res = BLS::verify(&parameters, &aggregated_pubkey, &message_bytes, &signature).unwrap();
+            assert_eq!(test_case.output, res);
+        }
+    }
+
 }
 
