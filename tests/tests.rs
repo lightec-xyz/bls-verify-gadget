@@ -192,56 +192,68 @@ mod tests {
 
     use super::*;
 
-    // #[test]
-    // fn test_sign() {
-    //     let test_cases = read_sign_test_cases();
+    #[test]
+    fn test_sign() {
+        let test_cases = read_sign_test_cases();
 
-    //     for test_case in test_cases {    
-    //         let mut private_bytes = hex::decode(&test_case.input.privkey[2..]).unwrap();
-    //         let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
-    //         private_bytes.reverse();
-    //         let private_key = PrivateKey::from(&private_bytes[..]);
+        for test_case in test_cases {    
+            let mut private_bytes = hex::decode(&test_case.input.privkey[2..]).unwrap();
+            let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
+            private_bytes.reverse();
+            let private_key = PrivateKey::try_from(&private_bytes[..]).unwrap();
             
-    //         let parameters = Parameters::default();
-    //         let mut rng = ark_std::test_rng();
+            let parameters = Parameters::default();
+            let mut rng = ark_std::test_rng();
 
-    //         let sign_result = BLS::sign(&parameters, &private_key, &message_bytes, &mut rng);
+            let sign_result = BLS::sign(&parameters, &private_key, &message_bytes, &mut rng);
 
-    //         match test_case.output {
-    //             None => if let Ok(signature) = sign_result {
-    //                 panic!("expected not to be signed, but signed")
-    //             }
-    //             Some(output) => {
-    //                 let signature = sign_result.unwrap();
+            match test_case.output {
+                None => if let Ok(_signature) = sign_result {
+                    panic!("expected not to be signed, but signed");
+                }
+                Some(output) => {
+                    let signature = sign_result.unwrap();
 
-    //                 let mut serialized = vec![0u8; 0];
-    //                 let mut size = 0;
-    //                 size += signature.serialized_size(Compress::Yes);
+                    let mut serialized = vec![0u8; 0];
+                    let mut size = 0;
+                    size += signature.serialized_size(Compress::Yes);
         
-    //                 serialized.resize(size, 0u8);
-    //                 signature.serialize_compressed(&mut serialized[..]).unwrap();
-    //                 assert_eq!(&output[2..], hex::encode(serialized));          
-    //             }
-    //         }
-    //     }
-    // }
+                    serialized.resize(size, 0u8);
+                    signature.serialize_compressed(&mut serialized[..]).unwrap();
+                    assert_eq!(&output[2..], hex::encode(serialized));          
+                }
+            }
+        }
+    }
 
-    // #[test]
-    // fn test_verify() {
-    //     let test_cases = read_verify_test_cases();
+    #[test]
+    fn test_verify() {
+        let test_cases = read_verify_test_cases();
 
-    //     for test_case in test_cases {    
-    //         let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
-           
-    //         let parameters = Parameters::default();
-    //         let public_key = PublicKey::from(&test_case.input.pubkey[2..]);
-    //         let signature = Signature::from(&test_case.input.signature[2..]);
+        for test_case in test_cases {
+            let mut public_key = PublicKey::default();
+            match PublicKey::try_from(&test_case.input.pubkey[2..]) {
+                Ok(public_key_org) => public_key = public_key_org,
+                Err(_err) => assert_eq!(test_case.output, false),
+            }
 
+            let mut signature = Signature::default();
+            match Signature::try_from(&test_case.input.signature[2..]) {
+                Ok(signature_org) => signature = signature_org,
+                Err(_err) => assert_eq!(test_case.output, false),
+            }
 
-    //         let res = BLS::verify(&parameters, &public_key, &message_bytes, &signature).unwrap();
-    //         assert_eq!(test_case.output, res);
-    //     }
-    // }
+            let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
+            let parameters = Parameters::default();
+
+            let res = match BLS::verify(&parameters, &public_key, &message_bytes, &signature) {
+                Ok(sig_rlt) => sig_rlt,
+                Err(_err) => false,
+            };
+            
+            assert_eq!(test_case.output, res);
+        }
+    }
 
     #[test]
     fn test_sign_aggr() {
@@ -257,7 +269,7 @@ mod tests {
 
             match test_case.output {
                 None => if let Some(_aggr_sig) = aggregated_sig {
-                    panic!("Expected the result of aggregate to be null, but not null")
+                    panic!("Expected the result of aggregate to be null, but not null");
                 }
                 Some(output) => {
                     let aggr_sig_str:String =  aggregated_sig.unwrap().into();
