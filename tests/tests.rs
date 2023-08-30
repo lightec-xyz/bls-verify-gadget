@@ -250,7 +250,7 @@ mod tests {
                 Ok(sig_rlt) => sig_rlt,
                 Err(_err) => false,
             };
-            
+
             assert_eq!(test_case.output, res);
         }
     }
@@ -279,26 +279,40 @@ mod tests {
         }
     }
 
-    // #[test]
-    // fn test_pubkey_aggr_verify() {
-    //     let test_cases = read_pubkey_aggr_verify_test_cases();
+    #[test]
+    fn test_pubkey_aggr_verify() {
+        let test_cases = read_pubkey_aggr_verify_test_cases();
 
-    //     for test_case in test_cases { 
-    //         let mut pubic_keys = Vec::new();
-    //         for pubkey_str in test_case.input.pubkeys {
-    //             pubic_keys.push(PublicKey::from(&pubkey_str[2..]));
-    //         }
-    //         let aggregated_pubkey = PublicKey::aggregate(pubic_keys);
+        for test_case in test_cases { 
+            let mut signature = Signature::default();
+            match Signature::try_from(&test_case.input.signature[2..]) {
+                Ok(signature_org) => signature = signature_org,
+                Err(_err) => assert_eq!(test_case.output, false),
+            }
 
-    //         let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
-    //         let parameters = Parameters::default();
-    //         let signature = Signature::from(&test_case.input.signature[2..]);
+            let mut pubic_keys = Vec::new();
+            for pubkey_str in &test_case.input.pubkeys {
+                pubic_keys.push(PublicKey::try_from(&pubkey_str[2..]).unwrap());
+            }
 
+            let mut aggregated_pubkey = PublicKey::default();
+            match PublicKey::aggregate(&pubic_keys) {
+                Some(public_key_org) => aggregated_pubkey = public_key_org,
+                None => assert_eq!(test_case.output, false),
+            }
+            
+            let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
+            let parameters = Parameters::default();
 
-    //         let res = BLS::verify(&parameters, &aggregated_pubkey, &message_bytes, &signature).unwrap();
-    //         assert_eq!(test_case.output, res);
-    //     }
-    // }
+            let res = match BLS::verify(&parameters, &aggregated_pubkey, &message_bytes, &signature) {
+                Ok(sig_rlt) => sig_rlt,
+                Err(_err) => false,
+            };
+
+            println!("test_case: {:?}, deser_rst: {:?}", test_case, res);
+            assert_eq!(test_case.output, res);
+        }
+    }
 
     #[test]
     fn test_deser_g1() {
