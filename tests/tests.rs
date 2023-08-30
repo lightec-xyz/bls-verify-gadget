@@ -243,30 +243,29 @@ mod tests {
     //     }
     // }
 
-    // #[test]
-    // fn test_sign_aggr() {
-    //     let test_cases = read_sign_aggr_test_cases();
+    #[test]
+    fn test_sign_aggr() {
+        let test_cases = read_sign_aggr_test_cases();
 
-    //     for test_case in test_cases {
-    //         let mut sigs = Vec::new();
-    //         for sign_str in test_case.input {
-    //             sigs.push(Signature::from(&sign_str[2..]));
-    //         }
+        for test_case in test_cases {
+            let mut sigs = Vec::new();
+            for sign_str in test_case.input {
+                sigs.push(Signature::try_from(&sign_str[2..]).unwrap());
+            }
 
-    //         let aggregated_sig = Signature::aggregate(sigs);
+            let aggregated_sig = Signature::aggregate(&sigs);
 
-    //         match test_case.output {
-    //             None => {
-    //                 // todo
-    //                 panic!("Signature aggregate does not handle when the input is null")
-    //             }
-    //             Some(output) => {
-    //                 let aggr_sig_str: String =  aggregated_sig.into(); 
-    //                 assert_eq!(output[2..], aggr_sig_str);
-    //             }
-    //         }
-    //     }
-    // }
+            match test_case.output {
+                None => if let Some(_aggr_sig) = aggregated_sig {
+                    panic!("Expected the result of aggregate to be null, but not null")
+                }
+                Some(output) => {
+                    let aggr_sig_str:String =  aggregated_sig.unwrap().into();
+                    assert_eq!(&output[2..], &aggr_sig_str);
+                }
+            }
+        }
+    }
 
     // #[test]
     // fn test_pubkey_aggr_verify() {

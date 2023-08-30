@@ -98,15 +98,16 @@ impl AsRef<Fr> for PrivateKey {
 pub struct PublicKey(G1Projective);
 
 impl PublicKey{
-    pub fn aggregate(public_keys: &Vec<PublicKey>) -> PublicKey {
+    pub fn aggregate(public_keys: &Vec<PublicKey>) -> Option<PublicKey> {
         if public_keys.len() == 0{
-           return PublicKey::default()
+            None
+        }else{
+            Some(
+                public_keys.into_iter()
+                .map(|p| p.borrow().0)
+                .sum::<G1Projective>()
+                .into())
         }
-
-        public_keys.into_iter()
-        .map(|p| p.borrow().0)
-        .sum::<G1Projective>()
-        .into()
     }
 }
 
@@ -178,14 +179,17 @@ impl Into<Vec<u8>> for PublicKey{
 pub struct Signature(G2Projective);
 
 impl Signature {
-    pub fn aggregate(signatures: &Vec<Signature>) -> Signature {
+    pub fn aggregate(signatures: &Vec<Signature>) -> Option<Signature> {
         if signatures.len() == 0{
-           return Signature::default()
+            None
+        }else{
+            Some(
+                signatures.into_iter()
+                .map(|s| s.borrow().0)
+                .sum::<G2Projective>()
+                .into()
+            )
         }
-        signatures.into_iter()
-        .map(|s| s.borrow().0)
-        .sum::<G2Projective>()
-        .into()
     }
 }
 
