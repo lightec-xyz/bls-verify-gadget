@@ -130,6 +130,60 @@ fn read_pubkey_aggr_verify_test_cases() -> Vec<PubkeyAggrVerifyTestCase> {
     test_cases
 }
 
+#[derive(Debug, Deserialize, Serialize)]
+struct DeserG1TestCase {
+    input: DeserG1TestInput,
+    output: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DeserG1TestInput {
+    pubkey: String,
+}
+
+fn read_deser_g1_test_cases() -> Vec<DeserG1TestCase> {
+    let file_contents = read_files_in_directory("tests/test_cases/deserialization_G1")
+        .unwrap_or_else(|err| panic!("Error reading test cases: {:?}", err));
+
+    let mut test_cases = Vec::new();
+
+    for content in file_contents {
+        let test_case = serde_json::from_str(&content)
+            .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
+        
+        test_cases.push(test_case);
+    }
+
+    test_cases
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DeserG2TestCase {
+    input: DeserG2TestInput,
+    output: bool,
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+struct DeserG2TestInput {
+    signature: String,
+}
+
+fn read_deser_g2_test_cases() -> Vec<DeserG2TestCase> {
+    let file_contents = read_files_in_directory("tests/test_cases/deserialization_G2")
+        .unwrap_or_else(|err| panic!("Error reading test cases: {:?}", err));
+
+    let mut test_cases = Vec::new();
+
+    for content in file_contents {
+        let test_case = serde_json::from_str(&content)
+            .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
+        
+        test_cases.push(test_case);
+    }
+
+    test_cases
+}
+
 #[cfg(test)]
 mod tests {
     use ark_crypto_primitives::signature::SignatureScheme;
@@ -232,6 +286,34 @@ mod tests {
 
             let res = BLS::verify(&parameters, &aggregated_pubkey, &message_bytes, &signature).unwrap();
             assert_eq!(test_case.output, res);
+        }
+    }
+
+    #[test]
+    fn test_deser_g1() {
+        let test_cases = read_deser_g1_test_cases();
+
+        for test_case in test_cases { 
+            let deser_rst = match PublicKey::try_from(test_case.input.pubkey) {
+                Ok(pubkey) => true,
+                Err(err) => false,
+            };
+            
+            assert_eq!(test_case.output, deser_rst);
+        }
+    }
+
+    #[test]
+    fn test_deser_g2() {
+        let test_cases = read_deser_g2_test_cases();
+
+        for test_case in test_cases { 
+            let deser_rst = match Signature::try_from(test_case.input.signature) {
+                Ok(pubkey) => true,
+                Err(err) => false,
+            };
+            
+            assert_eq!(test_case.output, deser_rst);
         }
     }
 
