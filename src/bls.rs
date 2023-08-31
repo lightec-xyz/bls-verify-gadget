@@ -1,9 +1,9 @@
 use ark_crypto_primitives::signature::SignatureScheme;
-use ark_crypto_primitives::Error;
-use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine};
+use ark_crypto_primitives::{Error, CryptoError};
+use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine, Fq2};
 
 use ark_ff::{BigInt};
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize};
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError};
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ec::Group;
 use ark_ec::bls12::Bls12;
@@ -14,9 +14,10 @@ use ark_std::{rand::Rng, ops::Mul, ops::Neg, UniformRand, One};
 
 use std::borrow::Borrow;
 use sha2::Sha256;
-use hex;
+use hex::{self, FromHex};
 
 pub use ark_ec::pairing::*;
+
 
 #[derive(Clone, Debug, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Parameters {
@@ -41,35 +42,35 @@ impl From<Fr> for PrivateKey {
     }
 }
 
-//
-impl From<String> for PrivateKey {
-    fn from(s: String) -> PrivateKey {  
+
+//input MUST be in little-endian hex string
+impl TryFrom<String> for PrivateKey {
+    type Error = SerializationError;
+    fn try_from(s: String) -> Result<PrivateKey, SerializationError> {  
         let bytes: Vec<u8> = hex::decode(s).unwrap();
-        PrivateKey::deserialize_compressed(&bytes[..]).unwrap()    
+        PrivateKey::deserialize_compressed(&bytes[..])
     }
 }
 
-impl From<&str> for PrivateKey {
-    fn from(s: &str) -> PrivateKey {
+//input MUST be in little-endian hex string 
+impl TryFrom<&str> for PrivateKey {
+    type Error = SerializationError;
+    fn try_from(s: &str) -> Result<PrivateKey, SerializationError> {
         let bytes = hex::decode(s).unwrap();
-        PrivateKey::deserialize_compressed(&bytes[..]).unwrap()    
+        PrivateKey::deserialize_compressed(&bytes[..])
     }
 }
 
-impl From<&[u8]> for PrivateKey {
-    fn from(bytes: &[u8]) -> PrivateKey {
-        PrivateKey::deserialize_compressed(&bytes[..]).unwrap()  
+//input MUST be in little-endian 
+impl TryFrom<&[u8]> for PrivateKey {
+    type Error = SerializationError;
+    fn try_from(bytes: &[u8]) -> Result<PrivateKey, SerializationError> {
+        PrivateKey::deserialize_compressed(&bytes[..])
     }
 }
 
-//[u64;4] must be MontBackend representation
-impl From<[u64;4]> for PrivateKey {
-    fn from(sk:[u64;4]) -> PrivateKey {
-        let val = BigInt(sk);
-        PrivateKey(Fr::from(val))
-    }
-}
 
+//output is in little-endian
 impl Into<String> for PrivateKey{
     fn into(self) -> String {
         let mut serialized = vec![0; 32];
@@ -78,6 +79,7 @@ impl Into<String> for PrivateKey{
     }
 }
 
+//output is in little-endian
 impl Into<Vec<u8>> for PrivateKey{
     fn into(self) -> Vec<u8> {
         let mut serialized = vec![0; 32];
@@ -94,6 +96,20 @@ impl AsRef<Fr> for PrivateKey {
 #[derive(Default)]
 #[derive(Clone, Copy, Eq, Debug, PartialEq, Hash, CanonicalSerialize, CanonicalDeserialize)]
 pub struct PublicKey(G1Projective);
+
+impl PublicKey{
+    pub fn aggregate(public_keys: &Vec<PublicKey>) -> Option<PublicKey> {
+        if public_keys.len() == 0{
+            None
+        }else{
+            Some(
+                public_keys.into_iter()
+                .map(|p| p.borrow().0)
+                .sum::<G1Projective>()
+                .into())
+        }
+    }
+}
 
 impl From<G1Projective> for PublicKey {
     fn from(pk: G1Projective) -> PublicKey {
@@ -114,20 +130,33 @@ impl From<&PrivateKey> for PublicKey {
     }
 }
 
-impl From<String> for PublicKey {
-    fn from(s:String) -> PublicKey {
+//input MUST be in little-endian 
+impl TryFrom<&[u8]> for PublicKey{
+    type Error = SerializationError;
+    fn try_from(bytes : &[u8]) -> Result<PublicKey, SerializationError> {
+        PublicKey::deserialize_compressed(&bytes[..])
+    }
+}
+
+//input MUST be in little-endian hex string
+impl TryFrom<String> for PublicKey {
+    type Error = SerializationError;
+    fn try_from(s:String) -> Result<PublicKey, SerializationError> {
         let bytes: Vec<u8> = hex::decode(s).unwrap();
-        PublicKey::deserialize_compressed(&bytes[..]).unwrap()    
+        PublicKey::deserialize_compressed(&bytes[..])
     }
 }
 
-impl From<&str> for PublicKey {
-    fn from(s:&str) -> PublicKey {
+//input MUST be in little-endian hex string
+impl TryFrom<&str> for PublicKey {
+    type Error = SerializationError;
+    fn try_from(s:&str) -> Result<PublicKey, SerializationError> {
         let bytes = hex::decode(s).unwrap();
-        PublicKey::deserialize_compressed(&bytes[..]).unwrap()    
+        PublicKey::deserialize_compressed(&bytes[..])
     }
 }
 
+//output is in little-endian
 impl Into<String> for PublicKey{
     fn into(self) -> String {
         let mut serialized = vec![0; 48];
@@ -136,6 +165,7 @@ impl Into<String> for PublicKey{
     }
 }
 
+//output is in little-endian
 impl Into<Vec<u8>> for PublicKey{
     fn into(self) -> Vec<u8> {
         let mut serialized = vec![0;48];
@@ -144,18 +174,24 @@ impl Into<Vec<u8>> for PublicKey{
     }
 }
 
-impl PublicKey {
-    pub fn aggregate<P: Borrow<PublicKey>>(public_keys: impl IntoIterator<Item = P>) -> PublicKey {
-        public_keys.into_iter()
-            .map(|p| p.borrow().0)
-            .sum::<G1Projective>()
-            .into()
-    }
-}
-
 #[derive(Default)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Signature(G2Projective);
+
+impl Signature {
+    pub fn aggregate(signatures: &Vec<Signature>) -> Option<Signature> {
+        if signatures.len() == 0{
+            None
+        }else{
+            Some(
+                signatures.into_iter()
+                .map(|s| s.borrow().0)
+                .sum::<G2Projective>()
+                .into()
+            )
+        }
+    }
+}
 
 impl From<G2Projective> for Signature {
     fn from(sig: G2Projective) -> Signature {
@@ -169,21 +205,33 @@ impl AsRef<G2Projective> for Signature {
     }
 }
 
-impl From<String> for Signature {
-    fn from(s:String) -> Signature {
-        let bytes = hex::decode(s).unwrap();
-        Signature::deserialize_compressed(&bytes[..]).unwrap()    
+//input MUST be in little-endian 
+impl TryFrom<&[u8]> for Signature{
+    type Error = SerializationError;
+    fn try_from(bytes : &[u8]) -> Result<Signature, SerializationError> {
+        Signature::deserialize_compressed(&bytes[..])
     }
 }
 
-impl From<&str> for Signature {
-    fn from(s:&str) -> Signature {
+//input MUST be in little-endian hex string
+impl TryFrom<String> for Signature {
+    type Error = SerializationError;
+    fn try_from(s:String) ->  Result<Signature, SerializationError>  {
         let bytes = hex::decode(s).unwrap();
-        Signature::deserialize_compressed(&bytes[..]).unwrap()    
+        Signature::deserialize_compressed(&bytes[..])
     }
 }
 
+//input MUST be in little-endian hex string 
+impl TryFrom<&str> for Signature {
+    type Error = SerializationError;
+    fn try_from(s:&str) -> Result<Signature, SerializationError> {
+        let bytes = hex::decode(s).unwrap();
+        Signature::deserialize_compressed(&bytes[..])
+    }
+}
 
+//output is in little-endian
 impl Into<String> for Signature{
     fn into(self) -> String {
         let mut serialized = vec![0; 96];
@@ -192,6 +240,7 @@ impl Into<String> for Signature{
     }
 }
 
+//output is in little-endian
 impl Into<Vec<u8>> for Signature{
     fn into(self) -> Vec<u8> {
         let mut serialized = vec![0;96];
@@ -200,14 +249,27 @@ impl Into<Vec<u8>> for Signature{
     }
 }
 
-impl Signature {
-    pub fn aggregate<S: Borrow<Signature>>(signatures: impl IntoIterator<Item = S>) -> Signature {
-        signatures.into_iter()
-            .map(|s| s.borrow().0)
-            .sum::<G2Projective>()
-            .into()
+#[derive(Debug)]
+pub enum BLSError {
+    InvalidSecretKey,
+    InvalidPublicKey,
+    InvalidSignature,
+}
+
+
+impl core::fmt::Display for BLSError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let msg = match self {
+            Self::InvalidSecretKey => format!("invalid secret key"),
+            Self::InvalidPublicKey => "invalid public key".to_owned(),
+            Self::InvalidSignature => "invalid signature".to_owned(),
+        };
+        write!(f, "{}", msg)
     }
 }
+
+impl ark_std::error::Error for BLSError {}
+
 
 pub struct BLS ();
 
@@ -242,6 +304,9 @@ impl SignatureScheme for BLS {
         message: &[u8],
         _rng: &mut R,
     ) -> Result<Self::Signature, Error> {
+        if *sk == Self::SecretKey::default() {
+            return Err(Box::new(BLSError::InvalidSecretKey))
+        }
         let h : G2Projective = G2Projective::from(hash_to_g2(message));
         let signature = Self::Signature::from(h.mul(sk.as_ref()));
 
@@ -254,6 +319,9 @@ impl SignatureScheme for BLS {
         message: &[u8],
         signature: &Signature,
     ) -> Result<bool, Error> {
+        if *pk == Self::PublicKey::default() {
+            return Err(Box::new(BLSError::InvalidPublicKey))
+        }
         let g1 : G1Affine = parameters.g1_generator.clone().into();
         let g1_neg = G1Projective::from(g1.neg());
 
