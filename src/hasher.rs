@@ -2,16 +2,20 @@ use ark_ec::{CurveGroup, CurveConfig, hashing::HashToCurveError, bls12::{Bls12, 
 use ark_ff::{Field, PrimeField, BitIteratorBE};
 use ark_r1cs_std::{
     uint8::UInt8,
-    prelude::CurveVar,
+    prelude::{CurveVar, AllocVar},
     boolean,
     groups::bls12::G2Var,
     fields::{fp2::Fp2Var, fp::FpVar, FieldVar},
+    R1CSVar,
     ToConstraintFieldGadget,
+    ToBytesGadget,
 };
 
 use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
+use ark_relations::r1cs::ConstraintSystemRef;
 
 const MAX_DST_LENGTH: usize = 255;
+const LEN_PER_BASE_ELEM: usize = 64; // ceil((381 + 128)/8)
 
 /// quick and dirty hack from existing arkworks codes in algebra/ff and algebra/ec
 /// for BLS over BLS12-381 only, as specified in ETH2, *not* intended for generic uses
@@ -22,38 +26,38 @@ type ConstraintF = <BaseField as Field>::BasePrimeField;
 type FpVarDef = FpVar<<ark_bls12_381::Config as Bls12Config>::Fp>;
 type Fp2VarDef = Fp2Var<<ark_bls12_381::Config as Bls12Config>::Fp2Config>;
 type G2VarDef = G2Var<ark_bls12_381::Config>;
-pub struct DefaultFieldHasherWithCons<const SEC_PARAM: usize = 128> {
+pub struct DefaultFieldHasherWithCons {
+    cs: ConstraintSystemRef<ConstraintF>,
     len_per_base_elem: usize,
-    sha256: Sha256Gadget<ConstraintF>,
     dst: Vec<UInt8<ConstraintF>>,
 }
 
-impl<const SEC_PARAM: usize> DefaultFieldHasherWithCons<SEC_PARAM>
+impl DefaultFieldHasherWithCons
 {
-    fn new(dst: &[UInt8<ConstraintF>]) -> Self {
-        assert!(dst.len() <= MAX_DST_LENGTH);
+    fn new(cs: ConstraintSystemRef<ConstraintF>, dst: &[UInt8<ConstraintF>]) -> Self {
+        assert!(dst.len() <= MAX_DST_LENGTH, "DST too long");
         
         // The final output of `hash_to_field` will be an array of field
         // elements from TargetField, each of size `len_per_elem`.
-        let len_per_base_elem = Self::get_len_per_elem::<BaseField>();
-
-        let sha256 = Sha256Gadget::default();
+        let len_per_base_elem = LEN_PER_BASE_ELEM;
 
         DefaultFieldHasherWithCons {
+            cs: cs.clone(),
             len_per_base_elem,
-            sha256,
             dst: dst.to_vec(),
         }
     }
 
     fn hash_to_field(&self, message: &[UInt8<ConstraintF>], count: usize) -> Vec<Fp2VarDef> {
+        assert!(count == 2);
+
         let m = BaseField::extension_degree() as usize;
         assert!(m == 2);
 
         // The user imposes a `count` of elements of F_p^m to output per input msg,
         // each field element comprising `m` BasePrimeField elements.
         let len_in_bytes: usize = count * m * self.len_per_base_elem;
-        let uniform_bytes = Self::expand(message, len_in_bytes);
+        let uniform_bytes = Self::expand(self, message, len_in_bytes);
 
         let mut output = Vec::with_capacity(count);
         let mut base_prime_field_elems = Vec::with_capacity(m);
@@ -93,33 +97,67 @@ impl<const SEC_PARAM: usize> DefaultFieldHasherWithCons<SEC_PARAM>
         output
     }
 
-    fn expand(message: &[UInt8<ConstraintF>], len_in_bytes: usize) -> Vec<UInt8<ConstraintF>> {
-        todo!();
-    }
+    /// acording to https://datatracker.ietf.org/doc/html/rfc9380#name-expand_message_xmd
+    fn expand(&self, message: &[UInt8<ConstraintF>], len_in_bytes: usize) -> Vec<UInt8<ConstraintF>> {
+        let b_len = 32;
+        let ell = (len_in_bytes + b_len - 1) / b_len;
+        assert!(ell <= 255, "The ratio of desired output to the output size of hash function is too large!");
+        assert!(len_in_bytes <= 65535, "Length should be smaller than 2^16");
 
-    /// This function computes the length in bytes that a hash function should output
-    /// for hashing an element of type `Field`.
-    /// See section 5.1 and 5.3 of the
-    /// [IETF hash standardization draft](https://datatracker.ietf.org/doc/draft-irtf-cfrg-hash-to-curve/14/)
-    fn get_len_per_elem<F: Field>() -> usize {
-        // ceil(log(p))
-        let base_field_size_in_bits = F::BasePrimeField::MODULUS_BIT_SIZE as usize;
-        // ceil(log(p)) + security_parameter
-        let base_field_size_with_security_padding_in_bits = base_field_size_in_bits + SEC_PARAM;
-        // ceil( (ceil(log(p)) + security_parameter) / 8)
-        let bytes_per_base_field_elem =
-            ((base_field_size_with_security_padding_in_bits + 7) / 8) as u64;
-        bytes_per_base_field_elem as usize
+        let mut dst_prime = self.dst.clone();
+        let dst_len_var = UInt8::<ConstraintF>::constant(dst_prime.len() as u8);
+        dst_prime.push(dst_len_var);
+        let dst_prime = dst_prime;
+
+        let z_pad = UInt8::constant_vec(&[0u8; 64]);
+
+        let lib_str: [u8; 2] = (len_in_bytes as u16).to_be_bytes();
+        let lib_str_var = UInt8::<ConstraintF>::new_witness_vec(self.cs.clone(), &lib_str).unwrap();
+
+        let mut msg_prime = z_pad.clone();
+        msg_prime.extend_from_slice(message);
+        msg_prime.extend_from_slice(&lib_str_var);
+        msg_prime.push(UInt8::constant(0u8));
+        msg_prime.extend_from_slice(&dst_prime);
+        let b0 :Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&msg_prime).unwrap().to_bytes().unwrap();
+
+        let mut data = b0.clone();
+        data.push(UInt8::constant(1u8));
+        data.extend_from_slice(&dst_prime);
+        let b1 :Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&data).unwrap().to_bytes().unwrap();
+
+        let mut ret = b1.clone();
+        let mut last_b = b1.clone();
+        for i in 2..ell {
+            let mut bx = std::iter::zip(b0.iter(), last_b.iter())
+                .into_iter()
+                .map(|(a, b)| a.xor(b).unwrap())
+                .collect::<Vec<UInt8<ConstraintF>>>();
+            bx.push(UInt8::new_witness(self.cs.clone(), || Ok(i as u8)).unwrap());
+            bx.extend_from_slice(&dst_prime);
+            let bi :Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&bx).unwrap().to_bytes().unwrap();
+            ret.extend_from_slice(&bi);
+
+            last_b = bx.clone();
+        }
+
+        assert!(ret.len() == len_in_bytes);
+
+        ret
     }
 
 }
 
-pub struct CurveMapperWithCons{}
+pub struct CurveMapperWithCons{
+    cs: ConstraintSystemRef<ConstraintF>,
+}
 
 impl CurveMapperWithCons
 {
-    fn new() -> Result<Self, HashToCurveError> {
-        Ok(CurveMapperWithCons{})
+    fn new(cs: ConstraintSystemRef<ConstraintF>) -> Result<Self, HashToCurveError> {
+        Ok(CurveMapperWithCons{
+            cs: cs.clone(),
+        })
     }
 
     fn map_to_curve(&self, point: Fp2VarDef) -> Result<G2VarDef, HashToCurveError> {
@@ -135,9 +173,9 @@ pub struct MapToCurveHasherWithCons
 
 impl MapToCurveHasherWithCons
 {
-    fn new(domain: &[UInt8<ConstraintF>]) -> Result<Self, HashToCurveError> {
-        let field_hasher = DefaultFieldHasherWithCons::new(domain);
-        let curve_mapper = CurveMapperWithCons::new()?;
+    fn new(cs: ConstraintSystemRef<ConstraintF>, domain: &[UInt8<ConstraintF>]) -> Result<Self, HashToCurveError> {
+        let field_hasher = DefaultFieldHasherWithCons::new(cs.clone(), domain);
+        let curve_mapper = CurveMapperWithCons::new(cs.clone())?;
         Ok(MapToCurveHasherWithCons {
             field_hasher,
             curve_mapper,
@@ -176,7 +214,7 @@ impl MapToCurveHasherWithCons
     }
 }
 
-pub fn hash_to_g2_with_cons(message: &[UInt8<ConstraintF>]) -> G2VarDef {
+pub fn hash_to_g2_with_cons(cs: ConstraintSystemRef<ConstraintF>, message: &[UInt8<ConstraintF>]) -> G2VarDef {
         
     let domain = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
     let domain_var : Vec<UInt8<ConstraintF>> = domain.iter()
@@ -184,7 +222,7 @@ pub fn hash_to_g2_with_cons(message: &[UInt8<ConstraintF>]) -> G2VarDef {
         .collect::<Vec<UInt8<ConstraintF>>>();
 
     let curve_hasher = MapToCurveHasherWithCons
-    ::new(&domain_var)
+    ::new(cs, &domain_var)
     .unwrap();
 
     curve_hasher.hash(message).unwrap()
