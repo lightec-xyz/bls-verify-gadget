@@ -251,6 +251,7 @@ mod tests {
                 Err(_err) => false,
             };
 
+            println!("test_case: {:?}, rst: {:?}", test_case, res);
             assert_eq!(test_case.output, res);
         }
     }
@@ -261,7 +262,7 @@ mod tests {
 
         for test_case in test_cases {
             let mut sigs = Vec::new();
-            for sign_str in test_case.input {
+            for sign_str in &test_case.input {
                 sigs.push(Signature::try_from(&sign_str[2..]).unwrap());
             }
 
@@ -309,7 +310,7 @@ mod tests {
                 Err(_err) => false,
             };
 
-            println!("test_case: {:?}, deser_rst: {:?}", test_case, res);
+            println!("test_case: {:?}, rst: {:?}", test_case, res);
             assert_eq!(test_case.output, res);
         }
     }
@@ -324,7 +325,7 @@ mod tests {
                 Err(_err) => false,
             };
              
-            println!("test_case: {:?}, deser_rst: {:?}", test_case, deser_rst);
+            println!("test_case: {:?}, rst: {:?}", test_case, deser_rst);
             assert_eq!(test_case.output, deser_rst);
         }
     }
@@ -339,7 +340,7 @@ mod tests {
                 Err(_err) => false,
             };
             
-            println!("test_case: {:?}, deser_rst: {:?}", test_case, deser_rst);
+            println!("test_case: {:?}, rst: {:?}", test_case, deser_rst);
             assert_eq!(test_case.output, deser_rst);
         }
     }
