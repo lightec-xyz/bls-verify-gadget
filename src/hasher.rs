@@ -137,7 +137,7 @@ impl DefaultFieldHasherWithCons
             let bi :Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&bx).unwrap().to_bytes().unwrap();
             ret.extend_from_slice(&bi);
 
-            last_b = bx.clone();
+            last_b = bi.clone();
         }
 
         assert!(ret.len() == len_in_bytes);
@@ -229,10 +229,14 @@ pub fn hash_to_g2_with_cons(cs: ConstraintSystemRef<ConstraintF>, message: &[UIn
 
 #[cfg(test)]
 mod test {
+    use ark_bls12_381::{Fq, Bls12_381, Fq2};
+    use ark_ec::bls12::{Bls12Config, Bls12};
+    use ark_ff::{field_hashers::{DefaultFieldHasher, HashToField}, QuadExtField, Fp2};
     use ark_r1cs_std::uint8::UInt8;
     use ark_relations::r1cs::ConstraintSystem;
     use hex::FromHex;
     use ark_r1cs_std::R1CSVar;
+    use sha2::Sha256;
 
     use super::{DefaultFieldHasherWithCons, ConstraintF};
 
@@ -250,10 +254,9 @@ mod test {
         let msg = "abc";
         let dst = <[u8; 32]>::from_hex("412717974da474d0f8c420f320ff81e8432adb7c927d9bd082b4fb4d16c0a236").unwrap();
         let dst_var = UInt8::<ConstraintF>::new_witness_vec(cs.clone(), dst.as_ref()).unwrap();
-        let size :usize = 32;
         let hasher = DefaultFieldHasherWithCons {
             cs: cs.clone(),
-            len_per_base_elem: size,
+            len_per_base_elem: 32,
             dst: dst_var,
         };
 
@@ -263,5 +266,61 @@ mod test {
         let expected_bytes = <[u8; 32]>::from_hex("52dbf4f36cf560fca57dedec2ad924ee9c266341d8f3d6afe5171733b16bbb12").unwrap();
 
         assert_eq!(expanded_bytes, expected_bytes);
+    }
+
+    #[test]
+    fn test_expand_long() {
+        // let's use this test vector from ark_ff fields::expand
+        // "DST_prime": "412717974da474d0f8c420f320ff81e8432adb7c927d9bd082b4fb4d16c0a23620",
+        // "len_in_bytes": "0x80",
+        // "msg": "abc",
+        // "msg_prime": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000616263008000412717974da474d0f8c420f320ff81e8432adb7c927d9bd082b4fb4d16c0a23620",
+        // "uniform_bytes": "1a30a5e36fbdb87077552b9d18b9f0aee16e80181d5b951d0471d55b66684914aef87dbb3626eaabf5ded8cd0686567e503853e5c84c259ba0efc37f71c839da2129fe81afdaec7fbdc0ccd4c794727a17c0d20ff0ea55e1389d6982d1241cb8d165762dbc39fb0cee4474d2cbbd468a835ae5b2f20e4f959f56ab24cd6fe267"
+
+        let cs = ConstraintSystem::<ConstraintF>::new_ref();
+
+        let msg = "abc";
+        let dst = <[u8; 32]>::from_hex("412717974da474d0f8c420f320ff81e8432adb7c927d9bd082b4fb4d16c0a236").unwrap();
+        let dst_var = UInt8::<ConstraintF>::new_witness_vec(cs.clone(), dst.as_ref()).unwrap();
+        let hasher = DefaultFieldHasherWithCons {
+            cs: cs.clone(),
+            len_per_base_elem: 64,
+            dst: dst_var,
+        };
+
+        let msg_var = UInt8::<ConstraintF>::new_witness_vec(cs.clone(), msg.as_ref()).unwrap();
+        let exp = hasher.expand(&msg_var, 128);
+        let expanded_bytes = exp.iter().map(|x| x.value().unwrap()).collect::<Vec<u8>>();
+        let expected_bytes = <[u8; 128]>::from_hex("1a30a5e36fbdb87077552b9d18b9f0aee16e80181d5b951d0471d55b66684914aef87dbb3626eaabf5ded8cd0686567e503853e5c84c259ba0efc37f71c839da2129fe81afdaec7fbdc0ccd4c794727a17c0d20ff0ea55e1389d6982d1241cb8d165762dbc39fb0cee4474d2cbbd468a835ae5b2f20e4f959f56ab24cd6fe267").unwrap();
+
+        assert_eq!(expanded_bytes, expected_bytes);
+    }
+
+    #[test]
+    fn test_hash_to_field() {
+        let cs = ConstraintSystem::<ConstraintF>::new_ref();
+
+        let msg = "abc";
+        let msg_var = UInt8::new_witness_vec(cs.clone(), msg.as_ref()).unwrap();
+        let dst = <[u8; 32]>::from_hex("412717974da474d0f8c420f320ff81e8432adb7c927d9bd082b4fb4d16c0a236").unwrap();
+        let dst_var = UInt8::<ConstraintF>::new_witness_vec(cs.clone(), dst.as_ref()).unwrap();
+
+        let hasher = <DefaultFieldHasher<Sha256, 128> as HashToField<Fq2>>::new(&dst);
+        let hashed :Vec<Fq2> = hasher.hash_to_field(msg.as_ref(), 2);
+        println!("{}\n{}\n\n", hashed[0], hashed[1]);
+
+        let hasher_cons = DefaultFieldHasherWithCons {
+            cs: cs.clone(),
+            len_per_base_elem: 64,
+            dst: dst_var,
+        };
+        let hashed_2 = hasher_cons
+            .hash_to_field(&msg_var, 2)
+            .iter()
+            .map(|x| x.value().unwrap())
+            .collect::<Vec<Fq2>>();
+
+        println!("{}\n{}\n\n", hashed_2[0], hashed_2[1]);
+        assert_eq!(hashed, hashed_2);
     }
 }
