@@ -6,7 +6,6 @@ use ark_r1cs_std::{
     boolean,
     groups::bls12::G2Var,
     fields::{fp2::Fp2Var, fp::FpVar, FieldVar},
-    R1CSVar,
     ToConstraintFieldGadget,
     ToBytesGadget,
 };
@@ -128,12 +127,12 @@ impl DefaultFieldHasherWithCons
 
         let mut ret = b1.clone();
         let mut last_b = b1.clone();
-        for i in 2..ell {
+        for i in 2..(ell+1) {
             let mut bx = std::iter::zip(b0.iter(), last_b.iter())
                 .into_iter()
                 .map(|(a, b)| a.xor(b).unwrap())
                 .collect::<Vec<UInt8<ConstraintF>>>();
-            bx.push(UInt8::new_witness(self.cs.clone(), || Ok(i as u8)).unwrap());
+            bx.push(UInt8::constant(i as u8));
             bx.extend_from_slice(&dst_prime);
             let bi :Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&bx).unwrap().to_bytes().unwrap();
             ret.extend_from_slice(&bi);
@@ -226,4 +225,43 @@ pub fn hash_to_g2_with_cons(cs: ConstraintSystemRef<ConstraintF>, message: &[UIn
     .unwrap();
 
     curve_hasher.hash(message).unwrap()
+}
+
+#[cfg(test)]
+mod test {
+    use ark_r1cs_std::uint8::UInt8;
+    use ark_relations::r1cs::ConstraintSystem;
+    use hex::FromHex;
+    use ark_r1cs_std::R1CSVar;
+
+    use super::{DefaultFieldHasherWithCons, ConstraintF};
+
+    #[test]
+    fn test_expand() {
+        // let's use this test vector from ark_ff fields::expand
+        // "DST_prime": "412717974da474d0f8c420f320ff81e8432adb7c927d9bd082b4fb4d16c0a23620",
+        // "len_in_bytes": "0x20",
+        // "msg": "abc",
+        // "msg_prime": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000616263002000412717974da474d0f8c420f320ff81e8432adb7c927d9bd082b4fb4d16c0a23620",
+        // "uniform_bytes": "52dbf4f36cf560fca57dedec2ad924ee9c266341d8f3d6afe5171733b16bbb12"
+
+        let cs = ConstraintSystem::<ConstraintF>::new_ref();
+
+        let msg = "abc";
+        let dst = <[u8; 32]>::from_hex("412717974da474d0f8c420f320ff81e8432adb7c927d9bd082b4fb4d16c0a236").unwrap();
+        let dst_var = UInt8::<ConstraintF>::new_witness_vec(cs.clone(), dst.as_ref()).unwrap();
+        let size :usize = 32;
+        let hasher = DefaultFieldHasherWithCons {
+            cs: cs.clone(),
+            len_per_base_elem: size,
+            dst: dst_var,
+        };
+
+        let msg_var = UInt8::<ConstraintF>::new_witness_vec(cs.clone(), msg.as_ref()).unwrap();
+        let exp = hasher.expand(&msg_var, 32);
+        let expanded_bytes = exp.iter().map(|x| x.value().unwrap()).collect::<Vec<u8>>();
+        let expected_bytes = <[u8; 32]>::from_hex("52dbf4f36cf560fca57dedec2ad924ee9c266341d8f3d6afe5171733b16bbb12").unwrap();
+
+        assert_eq!(expanded_bytes, expected_bytes);
+    }
 }
