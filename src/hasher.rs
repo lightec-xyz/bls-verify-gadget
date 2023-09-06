@@ -14,7 +14,7 @@ use ark_r1cs_std::{
     ToBytesGadget,
     ToBitsGadget,
     eq::EqGadget,
-    R1CSVar,
+    R1CSVar, uint64::UInt64,
 };
 
 use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
@@ -82,8 +82,8 @@ impl DefaultFieldHasherWithCons
                 let pos = ((ConstraintF::MODULUS_BIT_SIZE - 1) / 8) as usize;
                 let (tail, head)
                     = c_bytes_le.split_at(c_bytes_le.len() - pos);
-                let f_head : Vec<FpVarDef> = head.to_constraint_field().unwrap();
-                let f_tail : Vec<FpVarDef> = tail.to_constraint_field().unwrap();
+                let f_head: Vec<FpVarDef> = head.to_constraint_field().unwrap();
+                let f_tail: Vec<FpVarDef> = tail.to_constraint_field().unwrap();
 
                 // TODO clean up value move and clone()
                 let fp = FpVarDef::constant(ConstraintF::from(256));
@@ -129,12 +129,12 @@ impl DefaultFieldHasherWithCons
         msg_prime.extend_from_slice(&lib_str_var);
         msg_prime.push(UInt8::constant(0u8));
         msg_prime.extend_from_slice(&dst_prime);
-        let b0 :Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&msg_prime).unwrap().to_bytes().unwrap();
+        let b0: Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&msg_prime).unwrap().to_bytes().unwrap();
 
         let mut data = b0.clone();
         data.push(UInt8::constant(1u8));
         data.extend_from_slice(&dst_prime);
-        let b1 :Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&data).unwrap().to_bytes().unwrap();
+        let b1: Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&data).unwrap().to_bytes().unwrap();
 
         let mut ret = b1.clone();
         let mut last_b = b1.clone();
@@ -145,7 +145,7 @@ impl DefaultFieldHasherWithCons
                 .collect::<Vec<UInt8<ConstraintF>>>();
             bx.push(UInt8::constant(i as u8));
             bx.extend_from_slice(&dst_prime);
-            let bi :Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&bx).unwrap().to_bytes().unwrap();
+            let bi: Vec<UInt8<ConstraintF>> = Sha256Gadget::<ConstraintF>::digest(&bx).unwrap().to_bytes().unwrap();
             ret.extend_from_slice(&bi);
 
             last_b = bi.clone();
@@ -253,18 +253,7 @@ impl CurveMapperWithCons<'_>
     // }
     fn isogeny_map(&self, point: G2VarDef) -> Result<G2VarDef, HashToCurveError> {
         let is_infinity: Boolean<ConstraintF> = point.z.is_zero().unwrap();
-        let x = &point.x;
-        let y = &point.y;
-        let z = &point.z;
-
-        // A point (X', Y', Z') in Jacobian projective coordinates corresponds to the 
-        // affine point (x, y) = (X' / Z'^2, Y' / Z'^3)
-        let z_inv = z.inverse().unwrap_or_else(|_| Fp2VarDef::zero());
-        let z_inv_2 = z_inv.square().unwrap();
-        let z_inv_3 = &z_inv_2 * z_inv;
-
-        let x = x * z_inv_2;
-        let y = y * z_inv_3;
+        let (x, y) = to_affine_unchecked(point);
 
         let isogeny_map = <ark_bls12_381::g2::Config as WBConfig>::ISOGENY_MAP;
 
@@ -465,15 +454,12 @@ impl CurveMapperWithCons<'_>
         // let affine_x = &xn * &xd.inverse().unwrap();
         // let affine_y = y.clone();
 
-        // To convert (xn, xd, yn, yd) to Jacobian projective coordinates,
-        // compute (X', Y', Z') = (xn * xd * yd^2, yn * yd^2 * xd^3, xd * yd).
-        let xd3 = &xd.square().unwrap() * &xd;
-        Ok(G2VarDef::new(xn * &xd, y * xd3, xd))
+        to_projective_short(xd, xn, y)
     }
 
     /// based on RFC 9380 (draft ver 11) definition:
     /// CMOV(a, b, c): If c is False, CMOV returns a, otherwise it returns b.
-    fn cmov(&self, f: &Fp2VarDef, t :&Fp2VarDef, cond: Boolean<ConstraintF>) -> Fp2VarDef {
+    fn cmov(&self, f: &Fp2VarDef, t: &Fp2VarDef, cond: Boolean<ConstraintF>) -> Fp2VarDef {
         cond.select(t, f).unwrap()
     }
 
@@ -497,8 +483,8 @@ impl CurveMapperWithCons<'_>
     fn pow(&self, v: &Fp2VarDef, exp: &str) -> Fp2VarDef {
         let mut exp_u8 = <Vec<u8>>::from_hex(exp).unwrap();
         exp_u8.reverse();
-        let exp_cons :Vec<UInt8<ConstraintF>> = UInt8::<ConstraintF>::constant_vec(exp_u8.as_ref());
-        let exp_bits :Vec<Boolean<ConstraintF>> = exp_cons.to_bits_be().unwrap();
+        let exp_cons: Vec<UInt8<ConstraintF>> = UInt8::<ConstraintF>::constant_vec(exp_u8.as_ref());
+        let exp_bits: Vec<Boolean<ConstraintF>> = exp_cons.to_bits_be().unwrap();
 
         let one = Fp2VarDef::one();
         let mut r = one.clone();
@@ -513,22 +499,80 @@ impl CurveMapperWithCons<'_>
     }
 }
 
+fn to_projective_short(xd: Fp2VarDef, xn: Fp2VarDef, y: Fp2VarDef) -> Result<G2VarDef, HashToCurveError> {
+    // yd is Fp2VarDef::one() so simplified
+    let xd3 = &xd.square().unwrap() * &xd;
+    Ok(G2VarDef::new(xn * &xd, y * xd3, xd))
+}
+
+// fn to_projective(xd: Fp2VarDef, xn: Fp2VarDef, yn: Fp2VarDef, yd: Fp2VarDef) -> Result<G2VarDef, HashToCurveError> {
+//     // To convert (xn, xd, yn, yd) to Jacobian projective coordinates,
+//     // compute (X', Y', Z') = (xn * xd * yd^2, yn * yd^2 * xd^3, xd * yd).
+//     let xd3 = &xd.square().unwrap() * &xd;
+//     let yd2 = yd.clone().square().unwrap();
+//     Ok(G2VarDef::new(xn * &xd * &yd2, yn * yd2 * xd3, xd * yd))
+// }
+
+fn to_affine_unchecked(point: G2VarDef) -> (Fp2VarDef, Fp2VarDef) {
+    let x = &point.x;
+    let y = &point.y;
+    let z = &point.z;
+
+    // A point (X', Y', Z') in Jacobian projective coordinates corresponds to the
+    // affine point (x, y) = (X' / Z'^2, Y' / Z'^3)
+    let z_inv = z.inverse().unwrap_or_else(|_| Fp2VarDef::zero());
+    let z_inv_2 = z_inv.square().unwrap();
+    let z_inv_3 = &z_inv_2 * z_inv;
+
+    let x = x * z_inv_2;
+    let y = y * z_inv_3;
+    (x, y)
+}
+
 pub struct MapToCurveHasherWithCons<'a>
 {
     field_hasher: DefaultFieldHasherWithCons,
     curve_mapper: CurveMapperWithCons<'a>,
+    // PSI_X: Fp2VarDef,
+    // PSI_Y: Fp2VarDef,
+    // PSI_2_X: Fp2VarDef,
 }
 
 impl MapToCurveHasherWithCons<'_>
 {
+    // // PSI_X = 1/(u+1)^((p-1)/3)
+    // const P_POWER_ENDOMORPHISM_COEFF_0: Fq2 = Fq2::new(
+    //     MontFp!("0"),
+    //     MontFp!("4002409555221667392624310435006688643935503118305586438271171395842971157480381377015405980053539358417135540939437")
+    // );
+
+    // // PSI_Y = 1/(u+1)^((p-1)/2)
+    // const P_POWER_ENDOMORPHISM_COEFF_1: Fq2 = Fq2::new(
+    //     MontFp!("2973677408986561043442465346520108879172042883009249989176415018091420807192182638567116318576472649347015917690530"),
+    //     MontFp!("1028732146235106349975324479215795277384839936929757896155643118032610843298655225875571310552543014690878354869257")
+    // );
+
+    // // PSI_2_X = (u+1)^((1-p^2)/3) { also = 1 / 2^((p - 1) / 3) }
+    // const DOUBLE_P_POWER_ENDOMORPHISM_COEFF_0: Fq2 = Fq2::new(
+    //     MontFp!("4002409555221667392624310435006688643935503118305586438271171395842971157480381377015405980053539358417135540939436"),
+    //     MontFp!("0")
+    // );
+
     fn new(cs: ConstraintSystemRef<ConstraintF>, domain: &[UInt8<ConstraintF>]) -> Result<Self, HashToCurveError> {
         let field_hasher = DefaultFieldHasherWithCons::new(cs.clone(), domain);
         let curve_mapper = CurveMapperWithCons::new(cs.clone())?;
+
+        // let px: Fp2VarDef = Fp2VarDef::constant(Self::P_POWER_ENDOMORPHISM_COEFF_0);
+        // let py: Fp2VarDef = Fp2VarDef::constant(Self::P_POWER_ENDOMORPHISM_COEFF_1);
+        // let p2x: Fp2VarDef = Fp2VarDef::constant(Self::DOUBLE_P_POWER_ENDOMORPHISM_COEFF_0);
         Ok(MapToCurveHasherWithCons {
-            field_hasher,
-            curve_mapper,
-        })
-    }
+                field_hasher,
+                curve_mapper,
+                // PSI_X: px,
+                // PSI_Y: py,
+                // PSI_2_X: p2x,
+            })
+        }
 
     // Produce a hash of the message, using the hash to field and map to curve
     // traits. This uses the IETF hash to curve's specification for Random
@@ -551,26 +595,79 @@ impl MapToCurveHasherWithCons<'_>
 
         let rand_curve_elem = rand_curve_elem_0 + rand_curve_elem_1;
 
-        let rand_subgroup_elem = clear_cofactor(rand_curve_elem, &ark_bls12_381::g2::Config::COFACTOR);
+        let rand_subgroup_elem = self.clear_cofactor2(&rand_curve_elem);
 
         Ok(rand_subgroup_elem)
     }
 
-}
+    // slow implementation, FIXME
+    fn clear_cofactor2(&self, point: &G2VarDef) -> G2VarDef {
+        // value from section 8.8.2 of RFC 9380 (draft version 11)
+        let h_eff = "0bc69f08f2ee75b3584c6a0ea91b352888e2a8e9145ad7689986ff031508ffe1329c2f178731db956d82bf015d1212b02ec0ec69d7477c1ae954cbc06689f6a359894c0adebbf6b4e8020005aaa95551";
+        let mut h_eff_u8 = <[u8; 80]>::from_hex(h_eff).unwrap();
+        h_eff_u8.reverse();
+        let h_eff_var = UInt8::<ConstraintF>::constant_vec(&h_eff_u8);
+        let mut h_eff_bits = h_eff_var.to_bits_be().unwrap();
+        h_eff_bits.reverse();
+        point.scalar_mul_le(h_eff_bits.iter()).unwrap()
+    }
 
-fn clear_cofactor(point: G2VarDef, cofactor: &[u64]) -> G2VarDef {
-    // FIXME: there should be optimization based on endomorphism, see Fp2::clear_cofactor()
-    // but let's write a simple one in a hurry for now
-    let cofactor_bits = BitIteratorLE::new(cofactor)
-        .map(|b| Boolean::<ConstraintF>::constant(b))
-        .collect::<Vec<Boolean<ConstraintF>>>();
-    point.scalar_mul_le(cofactor_bits.iter()).unwrap()
+    // based on Appendix G.4 of RFC 9380 (draft ver 11)
+    // this should be much more efficient that clear_cofactor2 implementation
+    // (scalar multiplication by u64 for twice v.s. by u640 for h_eff)
+    // however, the psi2 function output is not on curve, thus panic FIXME
+    // fn clear_cofactor(&self, point: &G2VarDef) -> G2VarDef {
+    //     // 1.  t1 = c1 * P
+    //     let c = ark_bls12_381::Config::X[0];
+    //     let c_var = UInt64::<ConstraintF>::constant(c);
+    //     let c_bits = c_var.to_bits_le();
+    //     let t1 = point.scalar_mul_le(c_bits.iter()).unwrap().negate().unwrap();
+    //     // 2.  t2 = psi(P)
+    //     let t2: G2VarDef = self.psi(point.clone());
+    //     // 3.  t3 = 2 * P
+    //     let t3: G2VarDef = point.double().unwrap();
+    //     // 4.  t3 = psi2(t3)
+    //     let t3 = self.psi2(t3);
+    //     // 5.  t3 = t3 - t2
+    //     let t3 = t3 - &t2;
+    //     // 6.  t2 = t1 + t2
+    //     let t2: G2VarDef = &t1 + t2;
+    //     // 7.  t2 = c1 * t2
+    //     let t2 = t2.scalar_mul_le(c_bits.iter()).unwrap().negate().unwrap();
+    //     // 8.  t3 = t3 + t2
+    //     // 9.  t3 = t3 - t1
+    //     let t3 = t3 + t2 - t1;
+    //     // 10.  Q = t3 - P
+    //     // 11. return Q
+    //     t3 - point
+    // }
+
+    // fn frobenius(x: Fp2VarDef) -> Fp2VarDef {
+    //     Fp2VarDef::new(x.c0.clone(), x.c1.negate().unwrap())
+    // }
+
+    // fn psi(&self, point: G2VarDef) -> G2VarDef {
+    //     let (xn, yn) = to_affine_unchecked(point);
+    //     let qxn = &self.PSI_X * Self::frobenius(xn);
+    //     // frobenius of one() is still one(), so skip qxd and qyd
+    //     let qyn = &self.PSI_Y * Self::frobenius(yn);
+
+    //     G2VarDef::new(qxn, qyn, Fp2VarDef::one())
+    // }
+
+    // fn psi2(&self, point: G2VarDef) -> G2VarDef {
+    //     let (xn, yn) = to_affine_unchecked(point);
+    //     let qxn = &self.PSI_2_X * xn;
+    //     let qyn = yn.negate().unwrap();
+
+    //     G2VarDef::new(qxn, qyn, Fp2VarDef::one())
+    // }
 }
 
 pub fn hash_to_g2_with_cons(cs: ConstraintSystemRef<ConstraintF>, message: &[UInt8<ConstraintF>]) -> G2VarDef {
         
     let domain = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
-    let domain_var : Vec<UInt8<ConstraintF>> = UInt8::<ConstraintF>::constant_vec(domain);
+    let domain_var:  Vec<UInt8<ConstraintF>> = UInt8::<ConstraintF>::constant_vec(domain);
 
     let curve_hasher = MapToCurveHasherWithCons
     ::new(cs, &domain_var)
@@ -598,8 +695,11 @@ mod test {
     use ark_ff::MontConfig;
     use ark_ec::Group;
     use ark_r1cs_std::groups::CurveVar;
+    use ark_ff::PrimeField;
 
-    use super::{DefaultFieldHasherWithCons, ConstraintF, CurveMapperWithCons, Fp2VarDef, FpVarDef, G2VarDef, hash_to_g2_with_cons, G2, clear_cofactor};
+    use crate::hasher::MapToCurveHasherWithCons;
+
+    use super::{DefaultFieldHasherWithCons, ConstraintF, CurveMapperWithCons, Fp2VarDef, FpVarDef, G2VarDef, hash_to_g2_with_cons, G2};
 
     #[test]
     fn compute_constants() {
@@ -608,10 +708,10 @@ mod test {
         let B = Fq2::new(MontFp!("1012"), MontFp!("1012"));
         let Z = Fq2::new(MontFp!("-2"), MontFp!("-1"));
 
-        let p :&BigUint = &FqConfig::MODULUS.into();
+        let p: &BigUint = &FqConfig::MODULUS.into();
         println!("p: {}", p);
 
-        let q :&BigUint = &p.mul(p);
+        let q: &BigUint = &p.mul(p);
         println!("q: {}", q.to_str_radix(16));
 
         let c1 = q - 9u8;
@@ -620,10 +720,10 @@ mod test {
         let c1: BigUint = c1 >> 4;
         println!("c1: {}", c1.to_str_radix(16));
 
-        let mut one :Fq2 = Fq2::one();
+        let mut one: Fq2 = Fq2::one();
         one.neg_in_place();
         let minus_one = one;
-        let c2 :Fq2 = minus_one.sqrt().unwrap();
+        let c2: Fq2 = minus_one.sqrt().unwrap();
         println!("c2: {}, {}", c2.c0, c2.c1);
 
         let c3 = c2.sqrt().unwrap();
@@ -645,6 +745,14 @@ mod test {
         assert_eq!(z3, c4.square() * c3);
         assert_eq!(c2, c3.square());
         assert_eq!(c2.square(), Fq2::new(MontFp!("-1"), MontFp!("0")));
+
+        // for cofactor clearing
+        let two = Fq2::new(MontFp!("2"), MontFp!("0"));
+        let two_inv = two.inverse().unwrap();
+        let exp = (p - 1u8) / 3u8;
+        let exp_u64s: Vec<u64> = exp.to_u64_digits();
+        let cc = two_inv.pow(exp_u64s);
+        println!("cc: {}", cc);
 
     }
 
@@ -714,7 +822,7 @@ mod test {
         let dst_var = UInt8::<ConstraintF>::new_witness_vec(cs.clone(), dst.as_ref()).unwrap();
 
         let hasher = <DefaultFieldHasher<Sha256, 128> as HashToField<Fq2>>::new(&dst);
-        let hashed :Vec<Fq2> = hasher.hash_to_field(msg.as_ref(), 2);
+        let hashed: Vec<Fq2> = hasher.hash_to_field(msg.as_ref(), 2);
         println!("{}\n{}\n\n", hashed[0], hashed[1]);
 
         let hasher_cons = DefaultFieldHasherWithCons {
@@ -783,54 +891,18 @@ mod test {
 
     #[test]
     fn test_clear_cofactor() {
-        // note G2 cofactor is 0x5d543a95414e7f1091d50792876a202cd91de4547085abaa68a205b2e5a7ddfa628f1cb4d9e82ef21537e293a6691ae1616ec6e786f0c70cf1c38e31c7238e5
-        // and is encoded for ark_bls12_381::g2::Config::COFACTOR as
-        // const COFACTOR: &'static [u64] = &[
-        //     0xcf1c38e31c7238e5,
-        //     0x1616ec6e786f0c70,
-        //     0x21537e293a6691ae,
-        //     0xa628f1cb4d9e82ef,
-        //     0xa68a205b2e5a7ddf,
-        //     0xcd91de4547085aba,
-        //     0x91d50792876a202,
-        //     0x5d543a95414e7f1,
-        // ];
-
         let g = G2::generator();
         let g_var = G2VarDef::constant(g);
 
-        let cofactor = [2u64, 0u64]; // this is 2
-        // let cofactor_bits_le = BitIteratorLE::new(cofactor).collect::<Vec<bool>>();
-        let g_cleared = clear_cofactor(g_var.clone(), &cofactor);
-        let double_g = g + g;
-        assert_eq!(double_g.into_affine(), g_cleared.value().unwrap().into_affine());
-
-        let cofactor = [11u64, 0u64]; // b1011
-        let cleared = clear_cofactor(g_var.clone(), &cofactor);
-        let five_g = double_g + double_g + g;
-        let eleven_g = five_g + five_g + g;
-        assert_eq!(eleven_g.into_affine(), cleared.value().unwrap().into_affine());
-
-        let cofactor = [11u64, 0u64, 0u64, 0u64, 0u64, 0u64, 2u64];
-        let cleared = clear_cofactor(g_var.clone(), &cofactor);
-        let mut g_power_of_2 = g.clone();
-        for i in 0..385 {
-            g_power_of_2.double_in_place();
-        }
-        g_power_of_2 += eleven_g;
-        assert_eq!(g_power_of_2.into_affine(), cleared.value().unwrap().into_affine());
-
-        let cofactor = [11u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 0u64, 2u64];
-        let cleared = clear_cofactor(g_var.clone(), &cofactor);
-        let mut g_power_of_2 = g.clone();
-        for i in 0..705 {
-            g_power_of_2.double_in_place();
-        }
-        g_power_of_2 += eleven_g;
-        assert_eq!(g_power_of_2.into_affine(), cleared.value().unwrap().into_affine());
-
         let g_cleared = g.into_affine().clear_cofactor();
-        let cleared_var = clear_cofactor(g_var, ark_bls12_381::g2::Config::COFACTOR);
+
+        let domain = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
+        let domain_var:  Vec<UInt8<ConstraintF>> = UInt8::<ConstraintF>::constant_vec(domain);
+
+        let cs = ConstraintSystem::<ConstraintF>::new_ref();
+        let curve_hasher = MapToCurveHasherWithCons::new(cs, &domain_var).unwrap();
+
+        let cleared_var = curve_hasher.clear_cofactor2(&g_var);
         assert_eq!(g_cleared, cleared_var.value().unwrap().into_affine());
     }
 
