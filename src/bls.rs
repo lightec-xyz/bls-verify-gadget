@@ -1,8 +1,7 @@
 use ark_crypto_primitives::signature::SignatureScheme;
-use ark_crypto_primitives::{Error, CryptoError};
-use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine, Fq2};
+use ark_crypto_primitives::Error;
+use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine};
 
-use ark_ff::{BigInt};
 use ark_serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError};
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ec::Group;
@@ -14,7 +13,7 @@ use ark_std::{rand::Rng, ops::Mul, ops::Neg, UniformRand, One};
 
 use std::borrow::Borrow;
 use sha2::Sha256;
-use hex::{self, FromHex};
+use hex;
 
 pub use ark_ec::pairing::*;
 

@@ -1,12 +1,14 @@
-use std::ops::Mul;
-
-use ark_bls12_381::{Fq2, Bls12_381};
-use ark_ec::{CurveGroup, CurveConfig, hashing::{HashToCurveError, curve_maps::wb::WBConfig}, bls12::{Bls12, Bls12Config}, pairing::Pairing};
-use ark_ff::{Field, PrimeField, BitIteratorBE, MontFp, BitIteratorLE};
+use ark_bls12_381::Fq2;
+use ark_ec::{
+    CurveGroup,
+    hashing::{HashToCurveError, curve_maps::wb::WBConfig},
+    bls12::{Bls12, Bls12Config},
+    pairing::Pairing
+};
+use ark_ff::{Field, PrimeField, MontFp};
 use ark_r1cs_std::{
     uint8::UInt8,
     prelude::Boolean,
-    boolean,
     groups::bls12::{G2Var, G2AffineVar},
     groups::CurveVar,
     fields::{fp2::Fp2Var, fp::FpVar, FieldVar},
@@ -14,7 +16,6 @@ use ark_r1cs_std::{
     ToBytesGadget,
     ToBitsGadget,
     eq::EqGadget,
-    R1CSVar, uint64::UInt64,
 };
 
 use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
@@ -138,7 +139,7 @@ impl DefaultFieldHasherWithCons
 
         let mut ret = b1.clone();
         let mut last_b = b1.clone();
-        for i in 2..(ell+1) {
+        for i in 2..=ell {
             let mut bx = std::iter::zip(b0.iter(), last_b.iter())
                 .into_iter()
                 .map(|(a, b)| a.xor(b).unwrap())
@@ -680,11 +681,11 @@ pub fn hash_to_g2_with_cons(cs: ConstraintSystemRef<ConstraintF>, message: &[UIn
 mod test {
     use std::ops::Mul;
 
-    use ark_bls12_381::{Fq2, FqConfig, g2, G2Affine, G2Projective};
-    use ark_ec::{CurveGroup, CurveConfig, AffineRepr};
+    use ark_bls12_381::{Fq2, FqConfig};
+    use ark_ec::{CurveGroup, AffineRepr};
     use ark_ec::hashing::curve_maps::wb::WBMap;
     use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
-    use ark_ff::{Field, MontFp, BitIteratorLE};
+    use ark_ff::{Field, MontFp};
     use ark_ff::field_hashers::{DefaultFieldHasher, HashToField};
     use ark_r1cs_std::{uint8::UInt8, fields::FieldVar, R1CSVar};
     use ark_relations::r1cs::ConstraintSystem;
@@ -695,11 +696,10 @@ mod test {
     use ark_ff::MontConfig;
     use ark_ec::Group;
     use ark_r1cs_std::groups::CurveVar;
-    use ark_ff::PrimeField;
 
     use crate::hasher::MapToCurveHasherWithCons;
 
-    use super::{DefaultFieldHasherWithCons, ConstraintF, CurveMapperWithCons, Fp2VarDef, FpVarDef, G2VarDef, hash_to_g2_with_cons, G2};
+    use super::{DefaultFieldHasherWithCons, ConstraintF, CurveMapperWithCons, Fp2VarDef, G2VarDef, hash_to_g2_with_cons, G2};
 
     #[test]
     fn compute_constants() {
