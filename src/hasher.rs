@@ -687,7 +687,8 @@ mod test {
     use ark_ec::hashing::map_to_curve_hasher::MapToCurve;
     use ark_ff::{Field, MontFp};
     use ark_ff::field_hashers::{DefaultFieldHasher, HashToField};
-    use ark_r1cs_std::{uint8::UInt8, fields::FieldVar, R1CSVar};
+    use ark_r1cs_std::prelude::AllocationMode;
+    use ark_r1cs_std::{uint8::UInt8, fields::FieldVar, R1CSVar, alloc::AllocVar};
     use ark_relations::r1cs::ConstraintSystem;
     use hex::FromHex;
     use sha2::Sha256;
@@ -879,13 +880,16 @@ mod test {
             println!("curve: {}, {}", point_curve.x, point_curve.y);
 
             let cs = ConstraintSystem::<ConstraintF>::new_ref();
-            let mapper_cons = CurveMapperWithCons::new(cs).unwrap();
+            let mapper_cons = CurveMapperWithCons::new(cs.clone()).unwrap();
 
-            let point_var = Fp2VarDef::constant(point);
+            // let point_var = Fp2VarDef::constant(point);
+            let point_var = Fp2VarDef::new_variable(cs.clone(), || Ok(point), AllocationMode::Witness).unwrap();
             let point_curve_var = mapper_cons.map_to_curve(point_var);
 
             assert_eq!(point_curve.x, point_curve_var.x.value().unwrap());
             assert_eq!(point_curve.y, point_curve_var.y.value().unwrap());
+
+            println!("constraint size: {}", cs.num_constraints());
         }
     }
 
