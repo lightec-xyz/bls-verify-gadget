@@ -95,7 +95,9 @@ impl AsRef<Fr> for PrivateKey {
 
 #[derive(Default)]
 #[derive(Clone, Copy, Eq, Debug, PartialEq, Hash, CanonicalSerialize, CanonicalDeserialize)]
-pub struct PublicKey(G1Projective);
+pub struct PublicKey {
+    pub pub_key: G1Projective,
+}
 
 impl PublicKey{
     pub fn aggregate(public_keys: &Vec<PublicKey>) -> Option<PublicKey> {
@@ -104,7 +106,7 @@ impl PublicKey{
         }else{
             Some(
                 public_keys.into_iter()
-                .map(|p| p.borrow().0)
+                .map(|p| p.borrow().pub_key)
                 .sum::<G1Projective>()
                 .into())
         }
@@ -113,13 +115,15 @@ impl PublicKey{
 
 impl From<G1Projective> for PublicKey {
     fn from(pk: G1Projective) -> PublicKey {
-        PublicKey(pk)
+        Self {
+            pub_key: pk,
+        }
     }
 }
 
 impl AsRef<G1Projective> for PublicKey {
     fn as_ref(&self) -> &G1Projective {
-        &self.0
+        &self.pub_key
     }
 }
 
@@ -176,7 +180,9 @@ impl Into<Vec<u8>> for PublicKey{
 
 #[derive(Default)]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
-pub struct Signature(G2Projective);
+pub struct Signature {
+    pub sig: G2Projective,
+}
 
 impl Signature {
     pub fn aggregate(signatures: &Vec<Signature>) -> Option<Signature> {
@@ -185,7 +191,7 @@ impl Signature {
         }else{
             Some(
                 signatures.into_iter()
-                .map(|s| s.borrow().0)
+                .map(|s| s.borrow().sig)
                 .sum::<G2Projective>()
                 .into()
             )
@@ -195,13 +201,13 @@ impl Signature {
 
 impl From<G2Projective> for Signature {
     fn from(sig: G2Projective) -> Signature {
-        Signature(sig)
+        Self { sig }
     }
 }
 
 impl AsRef<G2Projective> for Signature {
     fn as_ref(&self) -> &G2Projective {
-        &self.0
+        &self.sig
     }
 }
 
@@ -317,7 +323,7 @@ impl SignatureScheme for BLS {
         parameters: &Self::Parameters,
         pk: &Self::PublicKey,
         message: &[u8],
-        signature: &Signature,
+        signature: &Self::Signature,
     ) -> Result<bool, Error> {
         if *pk == Self::PublicKey::default() {
             return Err(Box::new(BLSError::InvalidPublicKey))
