@@ -2,7 +2,7 @@ use ark_crypto_primitives::signature::SignatureScheme;
 use ark_crypto_primitives::Error;
 use ark_bls12_381::{Bls12_381, Fr, G1Projective, G2Projective, G1Affine};
 
-use ark_serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError};
+use ark_serialize::{CanonicalSerialize, CanonicalDeserialize, SerializationError, Valid};
 use ark_ec::pairing::{Pairing, PairingOutput};
 use ark_ec::Group;
 use ark_ec::bls12::Bls12;
@@ -294,6 +294,9 @@ impl SignatureScheme for BLS {
         _parameters: &Self::Parameters,
         rng: &mut R,
     ) -> Result<(Self::PublicKey, Self::SecretKey), Error> {
+        // security: it seems RFC 5869 implementation is not readily available in Arkworks,
+        // so we will skip the salt here for now. Ref:
+        // https://www.ietf.org/archive/id/draft-irtf-cfrg-bls-signature-05.html
         let private_key = Self::SecretKey::from(Fr::rand(rng));
         let public_key = Self::PublicKey::from(&private_key);
 
@@ -324,9 +327,22 @@ impl SignatureScheme for BLS {
         message: &[u8],
         signature: &Self::Signature,
     ) -> Result<bool, Error> {
+        // security: identity test for public key
         if *pk == Self::PublicKey::default() {
             return Err(Box::new(BLSError::InvalidPublicKey))
         }
+        // security: on-curve and prime order subgroup checks for public key and signature
+        let pk_check = pk.pub_key.check();
+        match pk_check {
+            Err(_) => return Err(Box::new(BLSError::InvalidPublicKey)),
+            Ok(_) => {},
+        }
+        let sig_check = signature.sig.check();
+        match sig_check {
+            Err(_) => return Err(Box::new(BLSError::InvalidSignature)),
+            Ok(_) => {},
+        }
+
         let g1 : G1Affine = parameters.g1_generator.clone().into();
         let g1_neg = G1Projective::from(g1.neg());
 

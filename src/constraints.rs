@@ -65,14 +65,22 @@ where
     type PublicKeyVar = PublicKeyVar;
     type SignatureVar = SignatureVar;
 
+    /// on-curve or prime order check is *not* performed for public key or signature, see code comments
     fn verify(
         parameters: &Self::ParametersVar,
         public_key: &Self::PublicKeyVar,
         message: &[UInt8<F>],
         signature: &Self::SignatureVar,
     ) -> Result<Boolean<F>, SynthesisError> {
-        // let g1 : G1Affine = parameters.g1_generator.clone().into();
-        // let g1_neg = G1Projective::from(g1.neg());
+        // security: ensuring that public key is not identity
+        public_key.pub_key.enforce_not_equal(&CV1::zero())?;
+
+        // security: ensuring that public key and siggnature are on curve and in their prime order sub group.
+        // unfortunately both are not implemented in the lib, which is fine
+        // if public key / signature are from known places (such as blockchain data) -- FIXME later
+        // public_key.pub_key.enforce_prime_order();
+        // signature.sig.enforce_prime_order();
+
         let g1 : CV1 = parameters.g1_generator.clone();
         let g1_neg = g1.negate()?;
 
