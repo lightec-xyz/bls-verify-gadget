@@ -12,6 +12,7 @@ use ark_crypto_primitives::signature::constraints::SigVerifyGadget;
 use derivative::Derivative;
 
 use core::borrow::Borrow;
+use core::ops::Add;
 
 use crate::bls::*;
 
@@ -88,20 +89,7 @@ where
         // parameter is usually a constant, and public key / message / signature
         // could be constant, witness or variable
         // let's try our best to obtain the constrain system
-        let cs: ConstraintSystemRef<F> = match public_key.pub_key.cs() {
-            ConstraintSystemRef::None => {
-                match message.cs() {
-                    ConstraintSystemRef::None => {
-                        match signature.sig.cs() {
-                            ConstraintSystemRef::None => panic!("Constraint system is none."),
-                            ConstraintSystemRef::CS(_) => signature.sig.cs().clone()
-                        }
-                    },
-                    ConstraintSystemRef::CS(_) => message.cs().clone()
-                }
-            },
-            ConstraintSystemRef::CS(_) => public_key.pub_key.cs().clone()
-        };
+        let cs = extract_cs(public_key, message, signature);
         let h = crate::hasher::hash_to_g2_with_cons(cs, message);
 
         let g1_neg_prepared = PairingVar::prepare_g1(&g1_neg).unwrap();
@@ -112,8 +100,64 @@ where
 
         paired.is_one()
     }
+
 }
 
+fn extract_cs(public_key: &PublicKeyVar, message: &[UInt8<F>], signature: &SignatureVar) -> ConstraintSystemRef<F> {
+    let cs: ConstraintSystemRef<F> = match public_key.pub_key.cs() {
+        ConstraintSystemRef::None => {
+            match message.cs() {
+                ConstraintSystemRef::None => {
+                    match signature.sig.cs() {
+                        ConstraintSystemRef::None => panic!("Constraint system is none."),
+                        ConstraintSystemRef::CS(_) => signature.sig.cs().clone()
+                    }
+                },
+                ConstraintSystemRef::CS(_) => message.cs().clone()
+            }
+        },
+        ConstraintSystemRef::CS(_) => public_key.pub_key.cs().clone()
+    };
+    cs
+}
+
+impl BlsSignatureVerifyGadget
+{
+    fn aggregate_verify(
+        parameters: &ParametersVar,
+        public_keys: &[PublicKeyVar],
+        bitmap: &[Boolean<F>],
+        message: &[UInt8<F>],
+        signature: &SignatureVar,
+    ) -> Result<(Boolean<F>, UInt32<F>), SynthesisError> {
+        assert_eq!(public_keys.len(), bitmap.len());
+
+        let cs = extract_cs(&public_keys[0], message, signature);
+        let (public_key, count) = Self::mapped_aggregate(cs.clone(), public_keys, bitmap).unwrap();
+
+        let r = Self::verify(parameters, &public_key, message, signature).unwrap();
+        Ok((r, count))
+    }
+
+    fn mapped_aggregate(
+        cs: ConstraintSystemRef<F>,
+        public_keys: &[PublicKeyVar],
+        bitmap: &[Boolean<F>],
+    ) -> Result<(PublicKeyVar, UInt32<F>), SynthesisError> {
+        let zero = CV1::zero();
+        let mut ret = zero.clone();
+        let count_zero = UInt32::<F>::constant(0u32);
+        let count_one = UInt32::<F>::constant(1u32);
+        let mut count = UInt32::<F>::new_variable(cs, || Ok(0), AllocationMode::Witness).unwrap();
+
+        for (bit, key) in bitmap.iter().zip(public_keys.iter()) {
+            ret = ret + bit.select(&key.pub_key, &zero).unwrap();
+            count = UInt32::<F>::addmany(&[count.clone(), bit.select(&count_one, &count_zero).unwrap()]).unwrap();
+        }
+
+        Ok((PublicKeyVar { pub_key: ret }, count.clone()))
+    }
+}
 
 impl AllocVar<Parameters, F> for ParametersVar
 where
@@ -271,8 +315,103 @@ mod test {
                 &SignatureVar::new_variable(cs.clone(), || Ok(sig), AllocationMode::Witness).unwrap()
             ).unwrap();
 
-            println!("verification result: {}\nconstraint size: {}", result.value().unwrap(), cs.num_constraints());
+            println!("verification result: {} constraint size: {}", result.value().unwrap(), cs.num_constraints());
             assert_eq!(result.value().unwrap(), expect);
         }
+    }
+
+    #[test]
+    fn test_aggregate_verify() {
+        // use case from ../tests/test_cases/fast_aggregate_verify
+        // {"input":
+        // {"pubkeys": ["0xa491d1b0ecd9bb917989f0e74f0dea0422eac4a873e5e2644f368dffb9a6e20fd6e10c1b77654d067c0618f6e5a7f79a",
+        // "0xb301803f8b5ac4a1133581fc676dfedc60d891dd5fa99028805e5ea5b08d3491af75d0707adab3b70c6a6a580217bf81"],
+        // "message": "0x5656565656565656565656565656565656565656565656565656565656565656",
+        // "signature": "0x912c3615f69575407db9392eb21fee18fff797eeb2fbe1816366ca2a08ae574d8824dbfafb4c9eaa1cf61b63c6f9b69911f269b664c42947dd1b53ef1081926c1e82bb2a465f927124b08391a5249036146d6f3f1e17ff5f162f779746d830d1"},
+        // "output": true}
+
+        let cs = ConstraintSystem::<F>::new_ref();
+
+        let pub_key1 = "a491d1b0ecd9bb917989f0e74f0dea0422eac4a873e5e2644f368dffb9a6e20fd6e10c1b77654d067c0618f6e5a7f79a";
+        let pub_key2 = "b301803f8b5ac4a1133581fc676dfedc60d891dd5fa99028805e5ea5b08d3491af75d0707adab3b70c6a6a580217bf81";
+        let pub_key1 = PublicKey::try_from(pub_key1).unwrap();
+        let pub_key2 = PublicKey::try_from(pub_key2).unwrap();
+        let mut pub_keys = Vec::with_capacity(512);
+        pub_keys.push(PublicKeyVar::new_variable(cs.clone(), || Ok(pub_key1), AllocationMode::Witness).unwrap());
+        for i in 1..512 {
+            pub_keys.push(PublicKeyVar::new_variable(cs.clone(), || Ok(pub_key2.clone()), AllocationMode::Witness).unwrap());
+        }
+
+        let mut bitmap = Vec::with_capacity(512);
+        bitmap.push(Boolean::<F>::new_witness(cs.clone(), || Ok(true)).unwrap());
+        bitmap.push(Boolean::<F>::new_witness(cs.clone(), || Ok(true)).unwrap());
+        for i in 2..512 {
+            bitmap.push(Boolean::<F>::new_witness(cs.clone(), || Ok(false)).unwrap());
+        }
+
+        let msg = "5656565656565656565656565656565656565656565656565656565656565656";
+        let msg = <[u8; 32]>::from_hex(msg).unwrap();
+        let msg = <UInt8<F>>::new_witness_vec(cs.clone(), &msg);
+
+        let sig = "912c3615f69575407db9392eb21fee18fff797eeb2fbe1816366ca2a08ae574d8824dbfafb4c9eaa1cf61b63c6f9b69911f269b664c42947dd1b53ef1081926c1e82bb2a465f927124b08391a5249036146d6f3f1e17ff5f162f779746d830d1";
+        let sig = Signature::try_from(sig).unwrap();
+
+        let (result, count) = BlsSignatureVerifyGadget::aggregate_verify(
+            &ParametersVar::new_variable(cs.clone(), || Ok(Parameters::default()), AllocationMode::Constant).unwrap(),
+            &pub_keys.as_ref(),
+            &bitmap.as_ref(),
+            msg.as_ref().unwrap(),
+            &SignatureVar::new_variable(cs.clone(), || Ok(sig), AllocationMode::Witness).unwrap()
+        ).unwrap();
+
+        println!("verification result: {} constraint size: {} effective public key count: {}",
+            result.value().unwrap(), cs.num_constraints(), count.value().unwrap());
+        assert_eq!(result.value().unwrap(), true);
+    }
+    #[test]
+    fn test_aggregate_verify_neg() {
+        // use case from ../tests/test_cases/fast_aggregate_verify
+        // {"input":
+        // {"pubkeys": ["0xa491d1b0ecd9bb917989f0e74f0dea0422eac4a873e5e2644f368dffb9a6e20fd6e10c1b77654d067c0618f6e5a7f79a",
+        // "0xb301803f8b5ac4a1133581fc676dfedc60d891dd5fa99028805e5ea5b08d3491af75d0707adab3b70c6a6a580217bf81"],
+        // "message": "0x5656565656565656565656565656565656565656565656565656565656565656",
+        // "signature": "0x912c3615f69575407db9392eb21fee18fff797eeb2fbe1816366ca2a08ae574d8824dbfafb4c9eaa1cf61b63c6f9b69911f269b664c42947dd1b53ef1081926c1e82bb2a465f927124b08391a5249036146d6f3f1e17ff5f162f779746d830d1"},
+        // "output": true}
+
+        let cs = ConstraintSystem::<F>::new_ref();
+
+        let pub_key1 = "a491d1b0ecd9bb917989f0e74f0dea0422eac4a873e5e2644f368dffb9a6e20fd6e10c1b77654d067c0618f6e5a7f79a";
+        let pub_key2 = "b301803f8b5ac4a1133581fc676dfedc60d891dd5fa99028805e5ea5b08d3491af75d0707adab3b70c6a6a580217bf81";
+        let pub_key1 = PublicKey::try_from(pub_key1).unwrap();
+        let pub_key2 = PublicKey::try_from(pub_key2).unwrap();
+        let mut pub_keys = Vec::with_capacity(512);
+        pub_keys.push(PublicKeyVar::new_variable(cs.clone(), || Ok(pub_key1), AllocationMode::Witness).unwrap());
+        for i in 1..512 {
+            pub_keys.push(PublicKeyVar::new_variable(cs.clone(), || Ok(pub_key2.clone()), AllocationMode::Witness).unwrap());
+        }
+
+        let mut bitmap = Vec::with_capacity(512);
+        for i in 0..512 {
+            bitmap.push(Boolean::<F>::new_witness(cs.clone(), || Ok(true)).unwrap());
+        }
+
+        let msg = "5656565656565656565656565656565656565656565656565656565656565656";
+        let msg = <[u8; 32]>::from_hex(msg).unwrap();
+        let msg = <UInt8<F>>::new_witness_vec(cs.clone(), &msg);
+
+        let sig = "912c3615f69575407db9392eb21fee18fff797eeb2fbe1816366ca2a08ae574d8824dbfafb4c9eaa1cf61b63c6f9b69911f269b664c42947dd1b53ef1081926c1e82bb2a465f927124b08391a5249036146d6f3f1e17ff5f162f779746d830d1";
+        let sig = Signature::try_from(sig).unwrap();
+
+        let (result, count) = BlsSignatureVerifyGadget::aggregate_verify(
+            &ParametersVar::new_variable(cs.clone(), || Ok(Parameters::default()), AllocationMode::Constant).unwrap(),
+            &pub_keys.as_ref(),
+            &bitmap.as_ref(),
+            msg.as_ref().unwrap(),
+            &SignatureVar::new_variable(cs.clone(), || Ok(sig), AllocationMode::Witness).unwrap()
+        ).unwrap();
+
+        println!("verification result: {} constraint size: {} effective public key count: {}",
+            result.value().unwrap(), cs.num_constraints(), count.value().unwrap());
+        assert_eq!(result.value().unwrap(), false);
     }
 }
