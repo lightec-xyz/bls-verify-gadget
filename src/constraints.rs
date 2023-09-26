@@ -1,9 +1,7 @@
 
 use core::marker::PhantomData;
-use ark_ff::{Field, PrimeField};
-use ark_ec::bls12::{Bls12, Bls12Config, G1Affine, G1Projective, G2Projective};
+use ark_ec::bls12::{Bls12, Bls12Config};
 use ark_ec::pairing::Pairing;
-use ark_r1cs_std::fields::fp12::Fp12Var;
 use ark_r1cs_std::groups::bls12;
 use ark_r1cs_std::prelude::PairingVar as PG;
 use ark_r1cs_std::{bits::uint8::UInt8, prelude::*};
@@ -20,16 +18,8 @@ use core::ops::Add;
 
 use crate::bls::*;
 
-// type Config = ark_bls12_381::Config;
-//type  <Bls12<P> as Pairing>::G1 = <Bls12<Config> as Pairing>::G1;
-// type  <Bls12<P> as Pairing>::G2 = <Bls12<Config> as Pairing>::G2;
-// type bls12::G1Var<P> = bls12::G1Var<Config>;
-// type bls12::G2Var<P> = bls12::G2Var<Config>;
-//  type F = ark_bls12_381::Fq;
-// type PairingVar = ark_r1cs_std::pairing::bls12::PairingVar<Config>;
-// type GTVar = Fp12Var<ark_bls12_381::Fq12Config>;
-
 type ConstraintF<P: Bls12Config> = P::Fp;
+type PairingVar<P: Bls12Config> = ark_r1cs_std::pairing::bls12::PairingVar<P>;
 
 
 pub struct ParametersVar<P: Bls12Config>
@@ -127,11 +117,11 @@ where
         let cs = extract_cs(public_key, message, signature);
         let h: bls12::G2Var<P> = crate::hasher::hash_to_g2_with_cons::<P>(cs, message);
 
-        let g1_neg_prepared: bls12::G1PreparedVar<P>  = PairingVar::prepare_g1(&g1_neg).unwrap();
-        let h_prepared: bls12::G2PreparedVar<P> = PairingVar::prepare_g2(&h).unwrap();
-        let public_key_prepared:bls12::G1PreparedVar<P> = PairingVar::prepare_g1(&public_key.public_key).unwrap();
-        let signature_prepared:bls12::G2PreparedVar<P> = PairingVar::prepare_g2(&signature.sig).unwrap();
-        let paired: Fp12Var<P::Fp12Config> = PairingVar::product_of_pairings(&[g1_neg_prepared, public_key_prepared], &[signature_prepared, h_prepared]).unwrap();
+        let g1_neg_prepared  = PairingVar::<P>::prepare_g1(&g1_neg).unwrap();
+        let h_prepared = PairingVar::<P>::prepare_g2(&h).unwrap();
+        let public_key_prepared = PairingVar::<P>::prepare_g1(&public_key.public_key).unwrap();
+        let signature_prepared  = PairingVar::<P>::prepare_g2(&signature.sig).unwrap();
+        let paired = PairingVar::<P>::product_of_pairings(&[g1_neg_prepared, public_key_prepared], &[signature_prepared, h_prepared]).unwrap();
 
         paired.is_one()
     }
