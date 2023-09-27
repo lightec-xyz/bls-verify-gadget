@@ -1,4 +1,4 @@
-
+use ark_bls12_381::Fq2;
 use ark_ec::{
     CurveGroup,
     hashing::{HashToCurveError, curve_maps::wb::WBConfig},
@@ -211,14 +211,17 @@ pub struct CurveMapperWithCons <'a, P:Bls12Config>{
 }
 
 impl <'a, P:Bls12Config> CurveMapperWithCons<'_, P>
+where 
+    P::G2Config: WBConfig
 {
     fn new(cs: ConstraintSystemRef<ConstraintF<P>>) -> Result<Self, HashToCurveError> {
-        Ok(CurveMapperWithCons{
+        Ok(CurveMapperWithCons::<P>{
             cs: cs.clone(),
             // see section 8.8.2 of RFC 9380 for below values
             //TODO(keep), Fq2是否要泛型化
+            COEFF_A: Fp2VarDef::<P>::constant(Fq2::new(MontFp!("0"), MontFp!("240"))),
     
-            COEFF_A: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("0"), MontFp!("240"))),
+            // COEFF_A: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("0"), MontFp!("240"))),
             COEFF_B: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("1012"), MontFp!("1012"))),
             ZETA: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("-2"), MontFp!("-1"))),
 
@@ -262,11 +265,11 @@ impl <'a, P:Bls12Config> CurveMapperWithCons<'_, P>
     // }
     fn isogeny_map(&self, point: G2VarDef<P>) -> Result<G2VarDef<P>, HashToCurveError> {
         let is_infinity: Boolean<ConstraintF<P>> = point.z.is_zero().unwrap();
-        let (x, y) = to_affine_unchecked(point);
+        let (x, y) = to_affine_unchecked::<P>(point);
 
         //TODO(keep), isogeny_map是否要泛型化
-        let isogeny_map = <ark_bls12_381::g2::Config as WBConfig>::ISOGENY_MAP;
-        let isogeny_map = <ark_bls12_381::g2::Config as WBConfig>::ISOGENY_MAP;
+        let isogeny_map = <P::G2Config  as WBConfig>::ISOGENY_MAP;
+        // let isogeny_map = <ark_bls12_381::g2::Config as WBConfig>::ISOGENY_MAP;
 
         let x_num_var = DensePolynomialVar::<P>::from_coefficients_slice(
             &[Fp2VarDef::<P>::constant(isogeny_map.x_map_numerator[0]),
@@ -307,8 +310,8 @@ impl <'a, P:Bls12Config> CurveMapperWithCons<'_, P>
         let img_x = x_num_at_x * x_den_at_x_inv;
         let img_y = (y_num_at_x * &y) * y_den_at_x_inv;
 
-        let projective = G2VarDef::new(img_x, img_y, Fp2VarDef::one());
-        let zero = G2VarDef::new(Fp2VarDef::zero(), Fp2VarDef::zero(), Fp2VarDef::zero());
+        let projective = G2VarDef::<P>::new(img_x, img_y, Fp2VarDef::<P>::one());
+        let zero = G2VarDef::<P>::new(Fp2VarDef::<P>::zero(), Fp2VarDef::<P>::zero(), Fp2VarDef::<P>::zero());
         let projective = is_infinity.select(&zero, &projective).unwrap();
 
         Ok(projective)
@@ -541,6 +544,8 @@ fn  to_affine_unchecked<P: Bls12Config> (point: G2VarDef<P>) -> (Fp2VarDef<P>, F
 }
 
 pub struct MapToCurveHasherWithCons<'a, P:Bls12Config>
+where 
+    P::G2Config: WBConfig
 {
     field_hasher: DefaultFieldHasherWithCons<P>,
     curve_mapper: CurveMapperWithCons<'a,P>,
@@ -550,6 +555,8 @@ pub struct MapToCurveHasherWithCons<'a, P:Bls12Config>
 }
 
 impl <P:Bls12Config> MapToCurveHasherWithCons<'_, P>
+where 
+    P::G2Config: WBConfig
 {
     // // PSI_X = 1/(u+1)^((p-1)/3)
     // const P_POWER_ENDOMORPHISM_COEFF_0: Fq2 = Fq2::new(
@@ -675,7 +682,10 @@ impl <P:Bls12Config> MapToCurveHasherWithCons<'_, P>
     // }
 }
 
-pub fn hash_to_g2_with_cons<P:Bls12Config>(cs: ConstraintSystemRef<ConstraintF<P>>, message: &[UInt8<ConstraintF<P>>]) -> G2VarDef<P> {
+pub fn hash_to_g2_with_cons<P:Bls12Config>(cs: ConstraintSystemRef<ConstraintF<P>>, message: &[UInt8<ConstraintF<P>>]) -> G2VarDef<P> 
+where 
+    P::G2Config: WBConfig
+{   
         
     let domain = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
     let domain_var = UInt8::<ConstraintF<P>>::constant_vec(domain);
