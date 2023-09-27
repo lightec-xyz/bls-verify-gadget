@@ -14,19 +14,20 @@ use ark_crypto_primitives::signature::constraints::SigVerifyGadget;
 use derivative::Derivative;
 
 use core::borrow::Borrow;
-use core::ops::Add;
 
 use crate::bls::*;
 
-type ConstraintF<P: > = <P as Bls12Config>::Fp;
+type ConstraintF<P> = <P as Bls12Config>::Fp;
 type PairingVar<P> = ark_r1cs_std::pairing::bls12::PairingVar<P>;
+type G1Var<P> = bls12::G1Var<P>;
+type G2Var<P> = bls12::G2Var<P>;
 
 
 pub struct ParametersVar<P: Bls12Config>
 where
-    for<'a> &'a bls12::G1Var<P>: GroupOpsBounds<'a, <Bls12<P> as Pairing>::G1, bls12::G1Var<P>>,
+    for<'a> &'a G1Var<P>: GroupOpsBounds<'a, <Bls12<P> as Pairing>::G1, G1Var<P>>,
 {
-    pub g1_generator: bls12::G1Var<P>,
+    pub g1_generator: G1Var<P>,
 }
 
 impl <P: Bls12Config> Clone for ParametersVar<P> {
@@ -41,9 +42,9 @@ impl <P: Bls12Config> Clone for ParametersVar<P> {
 #[derive(Derivative)]
 pub struct PublicKeyVar<P: Bls12Config>
 where
-    for<'a> &'a bls12::G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, bls12::G1Var<P>>,
+    for<'a> &'a G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, G1Var<P>>,
 {
-    pub public_key: bls12::G1Var<P>,
+    pub public_key: G1Var<P>,
 }
 
 impl <P: Bls12Config> Clone for PublicKeyVar<P> {
@@ -57,9 +58,9 @@ impl <P: Bls12Config> Clone for PublicKeyVar<P> {
 #[derive(Derivative)]
 pub struct SignatureVar<P: Bls12Config>
 where
-    for<'a> &'a bls12::G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, bls12::G2Var<P>>,
+    for<'a> &'a G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, G2Var<P>>,
 {
-    pub sig: bls12::G2Var<P>,
+    pub sig: G2Var<P>,
 }
 
 impl <P: Bls12Config> Clone for SignatureVar<P> {
@@ -73,8 +74,8 @@ impl <P: Bls12Config> Clone for SignatureVar<P> {
 
 pub struct BlsSignatureVerifyGadget<P: Bls12Config>
 where
-    for<'a> &'a bls12::G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, bls12::G1Var<P>>,
-    for<'a> &'a bls12::G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, bls12::G2Var<P>>,
+    for<'a> &'a G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, G1Var<P>>,
+    for<'a> &'a G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, G2Var<P>>,
     P::G2Config: WBConfig,
 {
     _v: PhantomData<P>,
@@ -83,8 +84,8 @@ where
 
 impl <P: Bls12Config> SigVerifyGadget<BLS<P>, ConstraintF<P>> for BlsSignatureVerifyGadget<P>
 where
-    for<'a> &'a bls12::G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, bls12::G1Var<P>>,
-    for<'a> &'a bls12::G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, bls12::G2Var<P>>,
+    for<'a> &'a G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, G1Var<P>>,
+    for<'a> &'a G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, G2Var<P>>,
     P::G2Config: WBConfig,
 {
     type ParametersVar = ParametersVar<P>;
@@ -99,7 +100,7 @@ where
         signature: &Self::SignatureVar,
     ) -> Result<Boolean<ConstraintF<P>>, SynthesisError> {
         // security: ensuring that public key is not identity
-        public_key.public_key.enforce_not_equal(&bls12::G1Var::<P>::zero())?;
+        public_key.public_key.enforce_not_equal(&G1Var::<P>::zero())?;
 
         // security: ensuring that public key and siggnature are on curve and in their prime order sub group.
         // unfortunately both are not implemented in the lib, which is fine
@@ -107,7 +108,7 @@ where
         // public_key.public_key.enforce_prime_order();
         // signature.sig.enforce_prime_order();
 
-        let g1 : bls12::G1Var<P> = parameters.g1_generator.clone();
+        let g1 : G1Var<P> = parameters.g1_generator.clone();
         let g1_neg = g1.negate()?;
 
         // in a typical signature verification use case,
@@ -115,7 +116,7 @@ where
         // could be constant, witness or variable
         // let's try our best to obtain the constrain system
         let cs = extract_cs(public_key, message, signature);
-        let h: bls12::G2Var<P> = crate::hasher::hash_to_g2_with_cons::<P>(cs, message);
+        let h: G2Var<P> = crate::hasher::hash_to_g2_with_cons::<P>(cs, message);
 
         let g1_neg_prepared  = PairingVar::<P>::prepare_g1(&g1_neg).unwrap();
         let h_prepared = PairingVar::<P>::prepare_g2(&h).unwrap();
@@ -171,7 +172,7 @@ where
         public_keys: &[PublicKeyVar<P>],
         bitmap: &[Boolean<ConstraintF<P>>],
     ) -> Result<(PublicKeyVar<P>, UInt32<ConstraintF<P>>), SynthesisError> {
-        let zero = bls12::G1Var::<P>::zero();
+        let zero = G1Var::<P>::zero();
         let mut ret = zero.clone();
         let count_zero = UInt32::<ConstraintF<P>>::constant(0u32);
         let count_one = UInt32::<ConstraintF<P>>::constant(1u32);
@@ -188,7 +189,7 @@ where
 
 impl <P: Bls12Config>  AllocVar<Parameters<P>, ConstraintF<P>> for ParametersVar<P>
 where
-    for<'a> &'a bls12::G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, bls12::G1Var<P>>,
+    for<'a> &'a G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, G1Var<P>>,
 {
     fn new_variable<T: Borrow<Parameters<P>>>(
         cs: impl Into<Namespace<ConstraintF<P>>>,
@@ -197,7 +198,7 @@ where
     ) -> Result<Self, SynthesisError> {
         f().and_then(|val| {
             let cs = cs.into();
-            let generator = bls12::G1Var::<P>::new_variable(cs.clone(), || Ok(val.borrow().g1_generator), mode)?;
+            let generator = G1Var::<P>::new_variable(cs.clone(), || Ok(val.borrow().g1_generator), mode)?;
             Ok(Self {
                 g1_generator: generator,
             })
@@ -207,7 +208,7 @@ where
 
 impl <P: Bls12Config>  AllocVar<PublicKey<P>, ConstraintF<P>> for PublicKeyVar<P>
 where
-    for<'a> &'a bls12::G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, bls12::G1Var<P>>,
+    for<'a> &'a G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, G1Var<P>>,
 {
     fn new_variable<T: Borrow<PublicKey<P>>>(
         cs: impl Into<Namespace<ConstraintF<P>>>,
@@ -216,7 +217,7 @@ where
     ) -> Result<Self, SynthesisError> {
         f().and_then(|val| {
             let cs = cs.into();
-            let key_var = bls12::G1Var::<P>::new_variable(cs.clone(), || Ok(val.borrow().public_key), mode)?;
+            let key_var = G1Var::<P>::new_variable(cs.clone(), || Ok(val.borrow().public_key), mode)?;
             Ok(Self {
                 public_key: key_var,
             })
@@ -226,7 +227,7 @@ where
 
 impl <P: Bls12Config> AllocVar<Signature<P>, ConstraintF<P>> for SignatureVar<P>
 where
-    for<'a> &'a bls12::G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, bls12::G2Var<P>>,
+    for<'a> &'a G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, G2Var<P>>,
 {
     fn new_variable<T: Borrow<Signature<P>>>(
         cs: impl Into<Namespace<ConstraintF<P>>>,
@@ -235,7 +236,7 @@ where
     ) -> Result<Self, SynthesisError> {
         f().and_then(|val| {
             let cs = cs.into();
-            let sig = bls12::G2Var::<P>::new_variable(cs.clone(), || Ok(val.borrow().sig), mode)?;
+            let sig = G2Var::<P>::new_variable(cs.clone(), || Ok(val.borrow().sig), mode)?;
             Ok(Self {
                 sig,
             })
@@ -245,7 +246,7 @@ where
 
 impl <P: Bls12Config> EqGadget<ConstraintF<P>> for PublicKeyVar<P>
 where
-    for<'a> &'a bls12::G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, bls12::G1Var<P>>,
+    for<'a> &'a G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, G1Var<P>>,
 {
     #[inline]
     fn is_eq(&self, other: &Self) -> Result<Boolean<ConstraintF<P>>, SynthesisError> {
@@ -275,7 +276,7 @@ where
 
 impl <P: Bls12Config> ToBytesGadget<ConstraintF<P>> for PublicKeyVar<P>
 where
-    for<'a> &'a bls12::G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, bls12::G1Var<P>>,
+    for<'a> &'a G1Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G1, G1Var<P>>,
 {
     fn to_bytes(&self) -> Result<Vec<UInt8<ConstraintF<P>>>, SynthesisError> {
         self.public_key.to_bytes()
@@ -284,7 +285,7 @@ where
 
 impl <P: Bls12Config> ToBytesGadget<ConstraintF<P>> for SignatureVar<P>
 where
-    for<'a> &'a bls12::G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, bls12::G2Var<P>>,
+    for<'a> &'a G2Var<P>: GroupOpsBounds<'a,  <Bls12<P> as Pairing>::G2, G2Var<P>>,
 {
     fn to_bytes(&self) -> Result<Vec<UInt8<ConstraintF<P>>>, SynthesisError> {
         self.sig.to_bytes()
@@ -303,11 +304,10 @@ mod test {
     use ark_r1cs_std::R1CSVar;
     use ark_relations::r1cs::ConstraintSystem;
     use hex::*;
-    use crate::bls::*;
     use ark_crypto_primitives::signature::SigVerifyGadget;
 
     type Config = ark_bls12_381::Config;
-    type Fq = ark_bls12_381::Fq;
+    type Fq = ark_bls12_381::Fq; 
 
     #[test]
     fn test_verify() {
@@ -336,13 +336,13 @@ mod test {
             let msg = <UInt8<Fq>>::new_witness_vec(cs.clone(), &msg);
 
             let sig = "882730e5d03f6b42c3abc26d3372625034e1d871b65a8a6b900a56dae22da98abbe1b68f85e49fe7652a55ec3d0591c20767677e33e5cbb1207315c41a9ac03be39c2e7668edc043d6cb1d9fd93033caa8a1c5b0e84bedaeb6c64972503a43eb";
-            let sig = Signature::try_from(sig).unwrap();
+            let sig = Signature::<Config>::try_from(sig).unwrap();
 
-            let result: Boolean<Fq> = BlsSignatureVerifyGadget::verify(
-                &ParametersVar::new_variable(cs.clone(), || Ok(Parameters::default()), AllocationMode::Constant).unwrap(),
-                &PublicKeyVar::new_variable(cs.clone(), || Ok(public_key), AllocationMode::Witness).unwrap(),
+            let result: Boolean<Fq> = BlsSignatureVerifyGadget::<Config>::verify(
+                &ParametersVar::<Config>::new_variable(cs.clone(), || Ok(Parameters::default()), AllocationMode::Constant).unwrap(),
+                &PublicKeyVar::<Config>::new_variable(cs.clone(), || Ok(public_key), AllocationMode::Witness).unwrap(),
                 msg.as_ref().unwrap(),
-                &SignatureVar::new_variable(cs.clone(), || Ok(sig), AllocationMode::Witness).unwrap()
+                &SignatureVar::<Config>::new_variable(cs.clone(), || Ok(sig), AllocationMode::Witness).unwrap()
             ).unwrap();
 
             println!("verification result: {} constraint size: {}", result.value().unwrap(), cs.num_constraints());
@@ -367,9 +367,9 @@ mod test {
         let pub_key1 = PublicKey::<Config>::try_from(pub_key1).unwrap();
         let pub_key2 = PublicKey::<Config>::try_from(pub_key2).unwrap();
         let mut pub_keys = Vec::with_capacity(512);
-        pub_keys.push(PublicKeyVar::new_variable(cs.clone(), || Ok(pub_key1), AllocationMode::Witness).unwrap());
+        pub_keys.push(PublicKeyVar::<Config>::new_variable(cs.clone(), || Ok(pub_key1), AllocationMode::Witness).unwrap());
         for i in 1..512 {
-            pub_keys.push(PublicKeyVar::new_variable(cs.clone(), || Ok(pub_key2.clone()), AllocationMode::Witness).unwrap());
+            pub_keys.push(PublicKeyVar::<Config>::new_variable(cs.clone(), || Ok(pub_key2.clone()), AllocationMode::Witness).unwrap());
         }
 
         let mut bitmap = Vec::with_capacity(512);
@@ -384,14 +384,14 @@ mod test {
         let msg = <UInt8<Fq>>::new_witness_vec(cs.clone(), &msg);
 
         let sig = "912c3615f69575407db9392eb21fee18fff797eeb2fbe1816366ca2a08ae574d8824dbfafb4c9eaa1cf61b63c6f9b69911f269b664c42947dd1b53ef1081926c1e82bb2a465f927124b08391a5249036146d6f3f1e17ff5f162f779746d830d1";
-        let sig = Signature::try_from(sig).unwrap();
+        let sig = Signature::<Config>::try_from(sig).unwrap();
 
-        let (result, count) = BlsSignatureVerifyGadget::aggregate_verify(
-            &ParametersVar::new_variable(cs.clone(), || Ok(Parameters::default()), AllocationMode::Constant).unwrap(),
+        let (result, count) = BlsSignatureVerifyGadget::<Config>::aggregate_verify(
+            &ParametersVar::<Config>::new_variable(cs.clone(), || Ok(Parameters::<Config>::default()), AllocationMode::Constant).unwrap(),
             &pub_keys.as_ref(),
             &bitmap.as_ref(),
             msg.as_ref().unwrap(),
-            &SignatureVar::new_variable(cs.clone(), || Ok(sig), AllocationMode::Witness).unwrap()
+            &SignatureVar::<Config>::new_variable(cs.clone(), || Ok(sig), AllocationMode::Witness).unwrap()
         ).unwrap();
 
         println!("verification result: {} constraint size: {} effective public key count: {}",
@@ -415,9 +415,9 @@ mod test {
         let pub_key1 = PublicKey::<Config>::try_from(pub_key1).unwrap();
         let pub_key2 = PublicKey::<Config>::try_from(pub_key2).unwrap();
         let mut pub_keys = Vec::with_capacity(512);
-        pub_keys.push(PublicKeyVar::new_variable(cs.clone(), || Ok(pub_key1), AllocationMode::Witness).unwrap());
+        pub_keys.push(PublicKeyVar::<Config>::new_variable(cs.clone(), || Ok(pub_key1), AllocationMode::Witness).unwrap());
         for i in 1..512 {
-            pub_keys.push(PublicKeyVar::new_variable(cs.clone(), || Ok(pub_key2.clone()), AllocationMode::Witness).unwrap());
+            pub_keys.push(PublicKeyVar::<Config>::new_variable(cs.clone(), || Ok(pub_key2.clone()), AllocationMode::Witness).unwrap());
         }
 
         let mut bitmap = Vec::with_capacity(512);
@@ -430,14 +430,14 @@ mod test {
         let msg = <UInt8<Fq>>::new_witness_vec(cs.clone(), &msg);
 
         let sig = "912c3615f69575407db9392eb21fee18fff797eeb2fbe1816366ca2a08ae574d8824dbfafb4c9eaa1cf61b63c6f9b69911f269b664c42947dd1b53ef1081926c1e82bb2a465f927124b08391a5249036146d6f3f1e17ff5f162f779746d830d1";
-        let sig = Signature::try_from(sig).unwrap();
+        let sig = Signature::<Config>::try_from(sig).unwrap();
 
-        let (result, count) = BlsSignatureVerifyGadget::aggregate_verify(
-            &ParametersVar::new_variable(cs.clone(), || Ok(Parameters::default()), AllocationMode::Constant).unwrap(),
+        let (result, count) = BlsSignatureVerifyGadget::<Config>::aggregate_verify(
+            &ParametersVar::<Config>::new_variable(cs.clone(), || Ok(Parameters::<Config>::default()), AllocationMode::Constant).unwrap(),
             &pub_keys.as_ref(),
             &bitmap.as_ref(),
             msg.as_ref().unwrap(),
-            &SignatureVar::new_variable(cs.clone(), || Ok(sig), AllocationMode::Witness).unwrap()
+            &SignatureVar::<Config>::new_variable(cs.clone(), || Ok(sig), AllocationMode::Witness).unwrap()
         ).unwrap();
 
         println!("verification result: {} constraint size: {} effective public key count: {}",

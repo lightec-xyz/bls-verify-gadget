@@ -1,7 +1,7 @@
 
 
-use std::str::FromStr;
 
+use std::str::FromStr;
 use ark_ec::{
     CurveGroup,
     hashing::{HashToCurveError, curve_maps::wb::WBConfig},
@@ -12,7 +12,7 @@ use ark_ff::{Field, PrimeField, Fp2, MontFp, Fp2Config, Fp2ConfigWrapper};
 use ark_r1cs_std::{
     uint8::UInt8,
     prelude::Boolean,
-    groups::bls12::{G2Var, G2AffineVar},
+    groups::bls12,
     groups::CurveVar,
     fields::{fp2::Fp2Var, fp::FpVar, FieldVar},
     ToConstraintFieldGadget,
@@ -37,7 +37,7 @@ const LEN_PER_BASE_ELEM: usize = 64; // ceil((381 + 128)/8)
 type ConstraintF<P> = <P as Bls12Config>::Fp;
 type FpVarDef<P> = FpVar<<P as Bls12Config>::Fp>;
 type Fp2VarDef<P> = Fp2Var<<P as Bls12Config>::Fp2Config>;
-type G2VarDef<P> = G2Var<P>;
+type G2VarDef<P> = bls12::G2Var<P>;
 
 pub struct DefaultFieldHasherWithCons<P: Bls12Config> {
     cs: ConstraintSystemRef<ConstraintF<P>>,
@@ -210,7 +210,7 @@ where
 }
 
 
-impl <'a, P:Bls12Config> CurveMapperWithCons<'_, P>
+impl <'a, P:Bls12Config> CurveMapperWithCons<'a, P>
 where 
     P::G2Config: WBConfig,
 {
@@ -273,10 +273,8 @@ where
         let is_infinity: Boolean<ConstraintF<P>> = point.z.is_zero().unwrap();
         let (x, y) = to_affine_unchecked::<P>(point);
 
-        //TODO(keep), isogeny_map是否要泛型化
         let isogeny_map = <P::G2Config as WBConfig>::ISOGENY_MAP;
-        // let isogeny_map = <ark_bls12_381::g2::Config as WBConfig>::ISOGENY_MAP;
-
+    
         let x_num_var = DensePolynomialVar::<P>::from_coefficients_slice(
             &[Fp2VarDef::<P>::constant(isogeny_map.x_map_numerator[0]),
             Fp2VarDef::<P>::constant(isogeny_map.x_map_numerator[1]),
@@ -503,8 +501,8 @@ where
     fn pow(&self, v: &Fp2VarDef<P>, exp: &str) -> Fp2VarDef<P> {
         let mut exp_u8 = <Vec<u8>>::from_hex(exp).unwrap();
         exp_u8.reverse();
-        let exp_cons: Vec<UInt8<ConstraintF<P>>> = UInt8::<ConstraintF<P>>::constant_vec(exp_u8.as_ref());
-        let exp_bits: Vec<Boolean<ConstraintF<P>>> = exp_cons.to_bits_be().unwrap();
+        let exp_cons = UInt8::<ConstraintF<P>>::constant_vec(exp_u8.as_ref());
+        let exp_bits= exp_cons.to_bits_be().unwrap();
 
         let one = Fp2VarDef::<P>::one();
         let mut r = one.clone();
@@ -540,7 +538,7 @@ fn  to_affine_unchecked<P: Bls12Config> (point: G2VarDef<P>) -> (Fp2VarDef<P>, F
 
     // A point (X', Y', Z') in Jacobian projective coordinates corresponds to the
     // affine point (x, y) = (X' / Z'^2, Y' / Z'^3)
-    let z_inv = z.inverse().unwrap_or_else(|_| Fp2VarDef::<P>::zero());
+    let z_inv = z.inverse().unwrap_or_else(|_|Fp2VarDef::<P>::zero());
     let z_inv_2 = z_inv.square().unwrap();
     let z_inv_3 = &z_inv_2 * z_inv;
 
@@ -560,7 +558,7 @@ where
     // PSI_2_X: Fp2VarDef,
 }
 
-impl <P:Bls12Config> MapToCurveHasherWithCons<'_, P>
+impl <'a, P:Bls12Config> MapToCurveHasherWithCons<'a, P>
 where 
     P::G2Config: WBConfig,
 {
@@ -1005,5 +1003,4 @@ mod test {
         let neg_1_prime = ConstraintF::<Config>::from(1).neg();
         assert_eq!(neg_1, neg_1_prime);
     }
-
 }

@@ -188,6 +188,7 @@ fn read_deser_g2_test_cases() -> Vec<DeserG2TestCase> {
 mod tests {
     use ark_crypto_primitives::signature::SignatureScheme;
     use ark_serialize::{Compress, CanonicalSerialize};
+    use ark_bls12_381::Config;
     use bls_verify_gadget::bls::{PrivateKey, Parameters, BLS, PublicKey, Signature};
 
     use super::*;
@@ -200,12 +201,12 @@ mod tests {
             let mut private_bytes = hex::decode(&test_case.input.privkey[2..]).unwrap();
             let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
             private_bytes.reverse();
-            let private_key = PrivateKey::try_from(&private_bytes[..]).unwrap();
+            let private_key = PrivateKey::<Config>::try_from(&private_bytes[..]).unwrap();
             
-            let parameters = Parameters::default();
+            let parameters = Parameters::<Config>::default();
             let mut rng = ark_std::test_rng();
 
-            let sign_result = BLS::sign(&parameters, &private_key, &message_bytes, &mut rng);
+            let sign_result = BLS::<Config>::sign(&parameters, &private_key, &message_bytes, &mut rng);
 
             match test_case.output {
                 None => if let Ok(_signature) = sign_result {
@@ -231,14 +232,14 @@ mod tests {
         let test_cases = read_verify_test_cases();
 
         for test_case in test_cases {
-            let mut public_key = PublicKey::default();
-            match PublicKey::try_from(&test_case.input.pubkey[2..]) {
+            let mut public_key = PublicKey::<Config>::default();
+            match PublicKey::<Config>::try_from(&test_case.input.pubkey[2..]) {
                 Ok(public_key_org) => public_key = public_key_org,
                 Err(_err) => assert_eq!(test_case.output, false),
             }
 
-            let mut signature = Signature::default();
-            match Signature::try_from(&test_case.input.signature[2..]) {
+            let mut signature = Signature::<Config>::default();
+            match Signature::<Config>::try_from(&test_case.input.signature[2..]) {
                 Ok(signature_org) => signature = signature_org,
                 Err(_err) => assert_eq!(test_case.output, false),
             }
@@ -246,7 +247,7 @@ mod tests {
             let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
             let parameters = Parameters::default();
 
-            let res = match BLS::verify(&parameters, &public_key, &message_bytes, &signature) {
+            let res = match BLS::<Config>::verify(&parameters, &public_key, &message_bytes, &signature) {
                 Ok(sig_rlt) => sig_rlt,
                 Err(_err) => false,
             };
@@ -263,10 +264,10 @@ mod tests {
         for test_case in test_cases {
             let mut sigs = Vec::new();
             for sign_str in &test_case.input {
-                sigs.push(Signature::try_from(&sign_str[2..]).unwrap());
+                sigs.push(Signature::<Config>::try_from(&sign_str[2..]).unwrap());
             }
 
-            let aggregated_sig = Signature::aggregate(&sigs);
+            let aggregated_sig = Signature::<Config>::aggregate(&sigs);
 
             match test_case.output {
                 None => if let Some(_aggr_sig) = aggregated_sig {
@@ -285,27 +286,27 @@ mod tests {
         let test_cases = read_pubkey_aggr_verify_test_cases();
 
         for test_case in test_cases { 
-            let mut signature = Signature::default();
-            match Signature::try_from(&test_case.input.signature[2..]) {
+            let mut signature = Signature::<Config>::default();
+            match Signature::<Config>::try_from(&test_case.input.signature[2..]) {
                 Ok(signature_org) => signature = signature_org,
                 Err(_err) => assert_eq!(test_case.output, false),
             }
 
             let mut pubic_keys = Vec::new();
             for pubkey_str in &test_case.input.pubkeys {
-                pubic_keys.push(PublicKey::try_from(&pubkey_str[2..]).unwrap());
+                pubic_keys.push(PublicKey::<Config>::try_from(&pubkey_str[2..]).unwrap());
             }
 
-            let mut aggregated_pubkey = PublicKey::default();
-            match PublicKey::aggregate(&pubic_keys) {
+            let mut aggregated_pubkey = PublicKey::<Config>::default();
+            match PublicKey::<Config>::aggregate(&pubic_keys) {
                 Some(public_key_org) => aggregated_pubkey = public_key_org,
                 None => assert_eq!(test_case.output, false),
             }
             
             let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
-            let parameters = Parameters::default();
+            let parameters = Parameters::<Config>::default();
 
-            let res = match BLS::verify(&parameters, &aggregated_pubkey, &message_bytes, &signature) {
+            let res = match BLS::<Config>::verify(&parameters, &aggregated_pubkey, &message_bytes, &signature) {
                 Ok(sig_rlt) => sig_rlt,
                 Err(_err) => false,
             };
@@ -320,7 +321,7 @@ mod tests {
         let test_cases = read_deser_g1_test_cases();
 
         for test_case in test_cases { 
-            let deser_rst = match PublicKey::try_from(&test_case.input.pubkey[..]) {
+            let deser_rst = match PublicKey::<Config>::try_from(&test_case.input.pubkey[..]) {
                 Ok(_pubkey) => true,
                 Err(_err) => false,
             };
@@ -335,7 +336,7 @@ mod tests {
         let test_cases = read_deser_g2_test_cases();
 
         for test_case in test_cases { 
-            let deser_rst = match Signature::try_from(&test_case.input.signature[..]) {
+            let deser_rst = match Signature::<Config>::try_from(&test_case.input.signature[..]) {
                 Ok(_pubkey) => true,
                 Err(_err) => false,
             };

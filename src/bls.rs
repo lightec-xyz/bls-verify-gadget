@@ -1,5 +1,4 @@
 use core::marker::PhantomData;
-
 use std::fmt;
 use ark_crypto_primitives::signature::SignatureScheme;
 use ark_crypto_primitives::Error;
@@ -18,6 +17,8 @@ use sha2::Sha256;
 use hex;
 
 pub use ark_ec::pairing::*;
+
+type ScalarField<P> = <<P as Bls12Config>::G1Config as CurveConfig>::ScalarField;
 
 #[derive(Copy, CanonicalSerialize, CanonicalDeserialize)]
 pub struct Parameters <P: Bls12Config> {
@@ -47,10 +48,9 @@ impl <P: Bls12Config> fmt::Debug for Parameters<P> {
 }
 
 
-
 #[derive(Copy, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
  pub struct PrivateKey<P: Bls12Config>{
-    pub private_key:  <<P as Bls12Config>::G1Config as CurveConfig>::ScalarField,
+    pub private_key: ScalarField<P>,
  }
 
  impl <P: Bls12Config> Default for PrivateKey<P> {
@@ -175,7 +175,7 @@ impl <P: Bls12Config> std::cmp::PartialEq for PublicKey<P> {
 
 impl <P: Bls12Config> std::hash::Hash for PublicKey<P> {
     fn hash<H: Hasher>(&self, state: &mut H){
-        panic!("unimplemented");
+        unimplemented!()
     }
 }
 
@@ -185,8 +185,8 @@ impl<P: Bls12Config> PublicKey<P>{
             None
         }else{
             Some(
-                public_keys.into_iter()
-                .map(|p| p.borrow().public_key)
+                public_keys.iter()
+                .map(|p| p.public_key)
                 .sum::<G1Projective<P>>()
                 .into())
         }
@@ -295,8 +295,8 @@ impl <P: Bls12Config> Signature<P> {
             None
         }else{
             Some(
-                signatures.into_iter()
-                .map(|s| s.borrow().sig)
+                signatures.iter()
+                .map(|s|s.sig)
                 .sum::<G2Projective<P>>()
                 .into()
             )
@@ -304,9 +304,9 @@ impl <P: Bls12Config> Signature<P> {
     }
 }
 
-impl <P: Bls12Config>  From<G2Projective<P>> for Signature<P> {
+impl <P: Bls12Config> From<G2Projective<P>> for Signature<P> {
     fn from(sig: G2Projective<P>) -> Self {
-        Self { sig }
+        Self {sig}
     }
 }
 
@@ -367,7 +367,6 @@ pub enum BLSError {
     InvalidSignature,
 }
 
-
 impl core::fmt::Display for BLSError {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let msg = match self {
@@ -407,7 +406,7 @@ where
         // so we will skip the salt here for now. Ref:
         // https://www.ietf.org/archive/id/draft-irtf-cfrg-bls-signature-05.html
    
-        let rand =  <<P as Bls12Config>::G1Config as CurveConfig>::ScalarField::rand(rng);
+        let rand =  ScalarField::<P>::rand(rng);
         let private_key = Self::SecretKey{private_key: rand};
         // let private_key = Self::SecretKey::try_from(rand.to_string()).unwrap();
         let public_key = Self::PublicKey::from(&private_key);
@@ -429,7 +428,6 @@ where
         }
         let h   = G2Projective::<P>::from(hash_to_g2::<P>(message));
         let v = sk.private_key;
-        h.mul(&v);
         let signature = Self::Signature::from(h.mul(v));
 
         Ok(signature)
@@ -460,7 +458,7 @@ where
         let g1: G1Affine::<P> = parameters.g1_generator.clone().into();
         let g1_neg = G1Projective::<P>::from(g1.neg());
 
-        let h: G2Projective<P> = hash_to_g2::<P>(message);
+        let h = hash_to_g2::<P>(message);
         
         let bls_paired = Bls12::<P>::multi_pairing([g1_neg, *pk.as_ref()], [*signature.as_ref(), h]);
 
@@ -576,8 +574,6 @@ mod tests{
         assert_eq!(s2.sig, s3.sig);
     }
     
-
-
     #[test]
     fn test_privatekey_from_string(){
         /*
@@ -622,8 +618,7 @@ mod tests{
         assert_eq!(expected_private_key.private_key, private_key.private_key);
 
         let pubkey =PublicKey::<Config>::from(&private_key);
-        println!("pubkey: {:?}", pubkey.public_key);
-        
+        // println!("pubkey: {:?}", pubkey.public_key);
     }
 
     #[test] 
