@@ -18,8 +18,8 @@ use core::ops::Add;
 
 use crate::bls::*;
 
-type ConstraintF<P: Bls12Config> = P::Fp;
-type PairingVar<P: Bls12Config> = ark_r1cs_std::pairing::bls12::PairingVar<P>;
+type ConstraintF<P: > = <P as Bls12Config>::Fp;
+type PairingVar<P> = ark_r1cs_std::pairing::bls12::PairingVar<P>;
 
 
 pub struct ParametersVar<P: Bls12Config>
@@ -32,7 +32,7 @@ where
 impl <P: Bls12Config> Clone for ParametersVar<P> {
     fn clone(&self) -> Self {
         ParametersVar {
-            g1_generator: self.g1_generator,
+            g1_generator: self.g1_generator.clone(),
         }
     }
 }
@@ -49,7 +49,7 @@ where
 impl <P: Bls12Config> Clone for PublicKeyVar<P> {
     fn clone(&self) -> Self {
         PublicKeyVar {
-            public_key: self.public_key,
+            public_key: self.public_key.clone(),
         }
     }
 }
@@ -65,7 +65,7 @@ where
 impl <P: Bls12Config> Clone for SignatureVar<P> {
     fn clone(&self) -> Self {
         SignatureVar {
-            sig: self.sig,
+            sig: self.sig.clone(),
         }
     }
 }

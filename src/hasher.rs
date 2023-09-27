@@ -1,11 +1,14 @@
-use ark_bls12_381::Fq2;
+
+
+use std::str::FromStr;
+
 use ark_ec::{
     CurveGroup,
     hashing::{HashToCurveError, curve_maps::wb::WBConfig},
     bls12::{Bls12, Bls12Config},
     pairing::Pairing
 };
-use ark_ff::{Field, PrimeField, Fp2, MontFp};
+use ark_ff::{Field, PrimeField, Fp2, MontFp, Fp2Config, Fp2ConfigWrapper};
 use ark_r1cs_std::{
     uint8::UInt8,
     prelude::Boolean,
@@ -20,8 +23,10 @@ use ark_r1cs_std::{
 
 use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
 use ark_relations::r1cs::{ConstraintSystemRef, SynthesisError};
+use std::ops::Neg;
 
 use hex::FromHex;
+use num_bigint::{BigUint};
 
 const MAX_DST_LENGTH: usize = 255;
 const LEN_PER_BASE_ELEM: usize = 64; // ceil((381 + 128)/8)
@@ -29,19 +34,10 @@ const LEN_PER_BASE_ELEM: usize = 64; // ceil((381 + 128)/8)
 /// quick and dirty hack from existing arkworks codes in algebra/ff and algebra/ec
 /// for BLS over BLS12-381 only, as specified in ETH2, *not* intended for generic uses
 
-// type G2 = <Bls12<ark_bls12_381::Config> as Pairing>::G2;
-// type BaseField = <G2 as CurveGroup>::BaseField;
-// type ConstraintF = <BaseField as Field>::BasePrimeField;
-// type FpVarDef = FpVar<<ark_bls12_381::Config as Bls12Config>::Fp>;
-// type Fp2VarDef = Fp2Var<<ark_bls12_381::Config as Bls12Config>::Fp2Config>;
-// type G2VarDef = G2Var<ark_bls12_381::Config>;
-// type G2AffineVarDef = G2AffineVar<ark_bls12_381::Config>;
-
-type ConstraintF<P: Bls12Config> = P::Fp;
-type FpVarDef<P: Bls12Config> = FpVar<P::Fp>;
-type Fp2VarDef<P: Bls12Config> = Fp2Var<P::Fp2Config>;
-type G2VarDef<P:Bls12Config> = G2Var<P>;
-// type Fq2<P:Bls12Config> = Fp2<P::Fp2Config>;
+type ConstraintF<P> = <P as Bls12Config>::Fp;
+type FpVarDef<P> = FpVar<<P as Bls12Config>::Fp>;
+type Fp2VarDef<P> = Fp2Var<<P as Bls12Config>::Fp2Config>;
+type G2VarDef<P> = G2Var<P>;
 
 pub struct DefaultFieldHasherWithCons<P: Bls12Config> {
     cs: ConstraintSystemRef<ConstraintF<P>>,
@@ -198,7 +194,10 @@ impl<P: Bls12Config>  DensePolynomialVar<P> {
     }
 }
 
-pub struct CurveMapperWithCons <'a, P:Bls12Config>{
+pub struct CurveMapperWithCons <'a, P:Bls12Config>
+where 
+    P::G2Config: WBConfig,
+{
     cs: ConstraintSystemRef<ConstraintF<P>>,
     COEFF_A: Fp2VarDef<P>,
     COEFF_B: Fp2VarDef<P>,
@@ -210,36 +209,43 @@ pub struct CurveMapperWithCons <'a, P:Bls12Config>{
     C5: Fp2VarDef<P>,
 }
 
+
 impl <'a, P:Bls12Config> CurveMapperWithCons<'_, P>
 where 
-    P::G2Config: WBConfig
+    P::G2Config: WBConfig,
 {
     fn new(cs: ConstraintSystemRef<ConstraintF<P>>) -> Result<Self, HashToCurveError> {
-        Ok(CurveMapperWithCons::<P>{
-            cs: cs.clone(),
-            // see section 8.8.2 of RFC 9380 for below values
-            //TODO(keep), Fq2是否要泛型化
-            COEFF_A: Fp2VarDef::<P>::constant(Fq2::new(MontFp!("0"), MontFp!("240"))),
-    
-            // COEFF_A: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("0"), MontFp!("240"))),
-            COEFF_B: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("1012"), MontFp!("1012"))),
-            ZETA: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("-2"), MontFp!("-1"))),
+        let coeff_a =  Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(ConstraintF::<P>::from(0u32), ConstraintF::<P>::from(240u32)));
+        let coeff_b = Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(ConstraintF::<P>::from(1012u32), ConstraintF::<P>::from(1012u32)));    
+        let zeta = Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(ConstraintF::<P>::from(2u32).neg(), ConstraintF::<P>::from(1u32).neg()));
+       
+        let c1 = "2a437a4b8c35fc74bd278eaa22f25e9e2dc90e50e7046b466e59e49349e8bd050a62cfd16ddca6ef53149330978ef011d68619c86185c7b292e85a87091a04966bf91ed3e71b743162c338362113cfd7ced6b1d76382eab26aa00001c718e3";
+        let c2 =  Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(ConstraintF::<P>::from(0u32), ConstraintF::<P>::from(1u32)));
+        
+        let c3_c0 = ConstraintF::<P>::from(BigUint::from_str("2973677408986561043442465346520108879172042883009249989176415018091420807192182638567116318576472649347015917690530").unwrap());
+        let c3_c1 = ConstraintF::<P>::from(BigUint::from_str("1028732146235106349975324479215795277384839936929757896155643118032610843298655225875571310552543014690878354869257").unwrap());
+        let c3 = Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(c3_c0, c3_c1));
 
-            //    Constants:
-            //    1. c1 = (q - 9) / 16            # Integer arithmetic
-            //    2. c2 = sqrt(-1)
-            //    3. c3 = sqrt(c2)
-            //    4. c4 = sqrt(Z^3 / c3)
-            //    5. c5 = sqrt(Z^3 / (c2 * c3))
-            C1: "2a437a4b8c35fc74bd278eaa22f25e9e2dc90e50e7046b466e59e49349e8bd050a62cfd16ddca6ef53149330978ef011d68619c86185c7b292e85a87091a04966bf91ed3e71b743162c338362113cfd7ced6b1d76382eab26aa00001c718e3",
-            C2: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("0"), MontFp!("1"))),
-            C3: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("2973677408986561043442465346520108879172042883009249989176415018091420807192182638567116318576472649347015917690530"),
-                MontFp!("1028732146235106349975324479215795277384839936929757896155643118032610843298655225875571310552543014690878354869257"))),
-            C4: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("1015919005498129635886032702454337503112659152043614931979881174103627376789972962005013361970813319613593700736144"),
-                MontFp!("1244231661155348484223428017511856347821538750986231559855759541903146219579071812422210818684355842447591283616181"))),
-            C5: Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(MontFp!("1637752706019426886789797193293828301565549384974986623510918743054325021588194075665960171838131772227885159387073"),
-                MontFp!("2356393562099837637521906572659114847248791943663835535137223682689832134851362912628461394915339516530489788841108"))),
-        })
+        let c4_c0 = ConstraintF::<P>::from(BigUint::from_str("1015919005498129635886032702454337503112659152043614931979881174103627376789972962005013361970813319613593700736144").unwrap());
+        let c4_c1 = ConstraintF::<P>::from(BigUint::from_str("1244231661155348484223428017511856347821538750986231559855759541903146219579071812422210818684355842447591283616181").unwrap());
+        let c4 = Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(c4_c0, c4_c1));
+
+        let c5_c0 = ConstraintF::<P>::from(BigUint::from_str("1637752706019426886789797193293828301565549384974986623510918743054325021588194075665960171838131772227885159387073").unwrap());
+        let c5_c1 = ConstraintF::<P>::from(BigUint::from_str("2356393562099837637521906572659114847248791943663835535137223682689832134851362912628461394915339516530489788841108").unwrap());
+        let c5 = Fp2VarDef::<P>::constant(Fp2::<P::Fp2Config>::new(c5_c0, c5_c1));
+        
+
+        Ok(CurveMapperWithCons{
+            cs:cs.clone(),
+            COEFF_A: coeff_a,
+            COEFF_B: coeff_b,
+            ZETA: zeta,
+            C1: c1,
+            C2: c2,
+            C3: c3,
+            C4: c4,
+            C5: c5,
+        })   
     }
 
     fn map_to_curve(&self, u: Fp2VarDef<P>) -> G2VarDef<P> {
@@ -268,7 +274,7 @@ where
         let (x, y) = to_affine_unchecked::<P>(point);
 
         //TODO(keep), isogeny_map是否要泛型化
-        let isogeny_map = <P::G2Config  as WBConfig>::ISOGENY_MAP;
+        let isogeny_map = <P::G2Config as WBConfig>::ISOGENY_MAP;
         // let isogeny_map = <ark_bls12_381::g2::Config as WBConfig>::ISOGENY_MAP;
 
         let x_num_var = DensePolynomialVar::<P>::from_coefficients_slice(
@@ -545,7 +551,7 @@ fn  to_affine_unchecked<P: Bls12Config> (point: G2VarDef<P>) -> (Fp2VarDef<P>, F
 
 pub struct MapToCurveHasherWithCons<'a, P:Bls12Config>
 where 
-    P::G2Config: WBConfig
+    P::G2Config: WBConfig,
 {
     field_hasher: DefaultFieldHasherWithCons<P>,
     curve_mapper: CurveMapperWithCons<'a,P>,
@@ -556,7 +562,7 @@ where
 
 impl <P:Bls12Config> MapToCurveHasherWithCons<'_, P>
 where 
-    P::G2Config: WBConfig
+    P::G2Config: WBConfig,
 {
     // // PSI_X = 1/(u+1)^((p-1)/3)
     // const P_POWER_ENDOMORPHISM_COEFF_0: Fq2 = Fq2::new(
@@ -684,7 +690,7 @@ where
 
 pub fn hash_to_g2_with_cons<P:Bls12Config>(cs: ConstraintSystemRef<ConstraintF<P>>, message: &[UInt8<ConstraintF<P>>]) -> G2VarDef<P> 
 where 
-    P::G2Config: WBConfig
+    P::G2Config: WBConfig,
 {   
         
     let domain = b"BLS_SIG_BLS12381G2_XMD:SHA-256_SSWU_RO_POP_";
@@ -949,4 +955,55 @@ mod test {
             assert_eq!(point.into_affine(), point_var.value().unwrap().into_affine());
         }
     }
+
+    #[test]
+    fn test_get_build_fp2(){
+        use ark_bls12_381::{Fq, Fq2};
+        type Config = ark_bls12_381::Config;
+        
+        let c3= Fp2VarDef::<Config>::constant(Fq2::new(MontFp!("2973677408986561043442465346520108879172042883009249989176415018091420807192182638567116318576472649347015917690530"),
+            MontFp!("1028732146235106349975324479215795277384839936929757896155643118032610843298655225875571310552543014690878354869257")));
+        let c4 = Fp2VarDef::<Config>::constant(Fq2::new(MontFp!("1015919005498129635886032702454337503112659152043614931979881174103627376789972962005013361970813319613593700736144"),
+            MontFp!("1244231661155348484223428017511856347821538750986231559855759541903146219579071812422210818684355842447591283616181")));
+        let c5 = Fp2VarDef::<Config>::constant(Fq2::new(MontFp!("1637752706019426886789797193293828301565549384974986623510918743054325021588194075665960171838131772227885159387073"),
+            MontFp!("2356393562099837637521906572659114847248791943663835535137223682689832134851362912628461394915339516530489788841108")));
+        
+
+        let original_c3_c0: ark_ff::Fp<ark_ff::MontBackend<FqConfig, 6>, 6> = MontFp!("2973677408986561043442465346520108879172042883009249989176415018091420807192182638567116318576472649347015917690530");
+        let original_c3_c1: ark_ff::Fp<ark_ff::MontBackend<FqConfig, 6>, 6> =  MontFp!("1028732146235106349975324479215795277384839936929757896155643118032610843298655225875571310552543014690878354869257");
+
+        let c3_c0 = ConstraintF::<Config>::from(BigUint::from_str("2973677408986561043442465346520108879172042883009249989176415018091420807192182638567116318576472649347015917690530").unwrap());
+        let c3_c1 = ConstraintF::<Config>::from(BigUint::from_str("1028732146235106349975324479215795277384839936929757896155643118032610843298655225875571310552543014690878354869257").unwrap());
+        assert_eq!(original_c3_c0, c3_c0);
+        assert_eq!(original_c3_c1, c3_c1);
+
+
+        let original_c4_c0: ark_ff::Fp<ark_ff::MontBackend<FqConfig, 6>, 6> = MontFp!("1015919005498129635886032702454337503112659152043614931979881174103627376789972962005013361970813319613593700736144");
+        let original_c4_c1: ark_ff::Fp<ark_ff::MontBackend<FqConfig, 6>, 6> =  MontFp!("1244231661155348484223428017511856347821538750986231559855759541903146219579071812422210818684355842447591283616181");
+
+        let c4_c0 = ConstraintF::<Config>::from(BigUint::from_str("1015919005498129635886032702454337503112659152043614931979881174103627376789972962005013361970813319613593700736144").unwrap());
+        let c4_c1 = ConstraintF::<Config>::from(BigUint::from_str("1244231661155348484223428017511856347821538750986231559855759541903146219579071812422210818684355842447591283616181").unwrap());
+        assert_eq!(original_c4_c0, c4_c0);
+        assert_eq!(original_c4_c1, c4_c1);
+
+
+
+        let original_c5_c0: ark_ff::Fp<ark_ff::MontBackend<FqConfig, 6>, 6> = MontFp!("1637752706019426886789797193293828301565549384974986623510918743054325021588194075665960171838131772227885159387073");
+        let original_c5_c1: ark_ff::Fp<ark_ff::MontBackend<FqConfig, 6>, 6> =  MontFp!("2356393562099837637521906572659114847248791943663835535137223682689832134851362912628461394915339516530489788841108");
+
+        let c5_c0 = ConstraintF::<Config>::from(BigUint::from_str("1637752706019426886789797193293828301565549384974986623510918743054325021588194075665960171838131772227885159387073").unwrap());
+        let c5_c1 = ConstraintF::<Config>::from(BigUint::from_str("2356393562099837637521906572659114847248791943663835535137223682689832134851362912628461394915339516530489788841108").unwrap());
+        assert_eq!(original_c5_c0, c5_c0);
+        assert_eq!(original_c5_c1, c5_c1);
+    }
+
+    #[test]
+    fn test_get_fp2(){
+        type Config = ark_bls12_381::Config;
+        
+        let neg_1 = ConstraintF::<Config>::from(-1);
+        let neg_1_prime = ConstraintF::<Config>::from(1).neg();
+        assert_eq!(neg_1, neg_1_prime);
+    }
+
 }
