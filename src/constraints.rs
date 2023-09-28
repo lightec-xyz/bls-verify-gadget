@@ -153,7 +153,7 @@ where
     pub fn aggregate_verify(
         parameters: &ParametersVar<P>,
         public_keys: &[PublicKeyVar<P>],
-        bitmap: &[Boolean<P::Fp>],
+        bitmap: &[Boolean<ConstraintF<P>>],
         message: &[UInt8<ConstraintF<P>>],
         signature: &SignatureVar<P>,
     ) -> Result<(Boolean<ConstraintF<P>>, UInt32<ConstraintF<P>>), SynthesisError> {
