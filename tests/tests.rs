@@ -3,7 +3,6 @@ use std::fs;
 use std::fs::File;
 use std::io::Read;
 
-
 fn read_files_in_directory(directory: &str) -> Result<Vec<String>, std::io::Error> {
     let mut file_contents = Vec::new();
 
@@ -11,7 +10,14 @@ fn read_files_in_directory(directory: &str) -> Result<Vec<String>, std::io::Erro
         let entry = entry?;
         let path = entry.path();
 
-        if path.is_file() && path.file_name().unwrap().to_str().unwrap().ends_with(".json") {
+        if path.is_file()
+            && path
+                .file_name()
+                .unwrap()
+                .to_str()
+                .unwrap()
+                .ends_with(".json")
+        {
             let mut file = File::open(&path)?;
             let mut content = String::new();
             file.read_to_string(&mut content)?;
@@ -43,7 +49,7 @@ fn read_sign_test_cases() -> Vec<SignTestCase> {
     for content in file_contents {
         let test_case = serde_json::from_str(&content)
             .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
-        
+
         test_cases.push(test_case);
     }
 
@@ -72,7 +78,7 @@ fn read_verify_test_cases() -> Vec<VerifyTestCase> {
     for content in file_contents {
         let test_case = serde_json::from_str(&content)
             .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
-        
+
         test_cases.push(test_case);
     }
 
@@ -94,7 +100,7 @@ fn read_sign_aggr_test_cases() -> Vec<SignAggrTestCase> {
     for content in file_contents {
         let test_case = serde_json::from_str(&content)
             .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
-        
+
         test_cases.push(test_case);
     }
 
@@ -123,7 +129,7 @@ fn read_pubkey_aggr_verify_test_cases() -> Vec<PubkeyAggrVerifyTestCase> {
     for content in file_contents {
         let test_case = serde_json::from_str(&content)
             .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
-        
+
         test_cases.push(test_case);
     }
 
@@ -150,7 +156,7 @@ fn read_deser_g1_test_cases() -> Vec<DeserG1TestCase> {
     for content in file_contents {
         let test_case = serde_json::from_str(&content)
             .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
-        
+
         test_cases.push(test_case);
     }
 
@@ -177,7 +183,7 @@ fn read_deser_g2_test_cases() -> Vec<DeserG2TestCase> {
     for content in file_contents {
         let test_case = serde_json::from_str(&content)
             .unwrap_or_else(|err| panic!("Error parsing test case: {:?}", err));
-        
+
         test_cases.push(test_case);
     }
 
@@ -186,9 +192,10 @@ fn read_deser_g2_test_cases() -> Vec<DeserG2TestCase> {
 
 #[cfg(test)]
 mod tests {
+    use ark_bls12_381::Config;
     use ark_crypto_primitives::signature::SignatureScheme;
-    use ark_serialize::{Compress, CanonicalSerialize};
-    use bls_verify_gadget::bls::{PrivateKey, Parameters, BLS, PublicKey, Signature};
+    use ark_serialize::{CanonicalSerialize, Compress};
+    use bls_verify_gadget::bls::{Parameters, PrivateKey, PublicKey, Signature, BLS};
 
     use super::*;
 
@@ -196,20 +203,23 @@ mod tests {
     fn test_sign() {
         let test_cases = read_sign_test_cases();
 
-        for test_case in test_cases {    
+        for test_case in test_cases {
             let mut private_bytes = hex::decode(&test_case.input.privkey[2..]).unwrap();
             let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
             private_bytes.reverse();
-            let private_key = PrivateKey::try_from(&private_bytes[..]).unwrap();
-            
-            let parameters = Parameters::default();
+            let private_key = PrivateKey::<Config>::try_from(&private_bytes[..]).unwrap();
+
+            let parameters = Parameters::<Config>::default();
             let mut rng = ark_std::test_rng();
 
-            let sign_result = BLS::sign(&parameters, &private_key, &message_bytes, &mut rng);
+            let sign_result =
+                BLS::<Config>::sign(&parameters, &private_key, &message_bytes, &mut rng);
 
             match test_case.output {
-                None => if let Ok(_signature) = sign_result {
-                    panic!("expected not to be signed, but signed");
+                None => {
+                    if let Ok(_signature) = sign_result {
+                        panic!("expected not to be signed, but signed");
+                    }
                 }
                 Some(output) => {
                     let signature = sign_result.unwrap();
@@ -217,10 +227,10 @@ mod tests {
                     let mut serialized = vec![0u8; 0];
                     let mut size = 0;
                     size += signature.serialized_size(Compress::Yes);
-        
+
                     serialized.resize(size, 0u8);
                     signature.serialize_compressed(&mut serialized[..]).unwrap();
-                    assert_eq!(&output[2..], hex::encode(serialized));          
+                    assert_eq!(&output[2..], hex::encode(serialized));
                 }
             }
         }
@@ -231,14 +241,14 @@ mod tests {
         let test_cases = read_verify_test_cases();
 
         for test_case in test_cases {
-            let mut public_key = PublicKey::default();
-            match PublicKey::try_from(&test_case.input.pubkey[2..]) {
+            let mut public_key = PublicKey::<Config>::default();
+            match PublicKey::<Config>::try_from(&test_case.input.pubkey[2..]) {
                 Ok(public_key_org) => public_key = public_key_org,
                 Err(_err) => assert_eq!(test_case.output, false),
             }
 
-            let mut signature = Signature::default();
-            match Signature::try_from(&test_case.input.signature[2..]) {
+            let mut signature = Signature::<Config>::default();
+            match Signature::<Config>::try_from(&test_case.input.signature[2..]) {
                 Ok(signature_org) => signature = signature_org,
                 Err(_err) => assert_eq!(test_case.output, false),
             }
@@ -246,10 +256,11 @@ mod tests {
             let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
             let parameters = Parameters::default();
 
-            let res = match BLS::verify(&parameters, &public_key, &message_bytes, &signature) {
-                Ok(sig_rlt) => sig_rlt,
-                Err(_err) => false,
-            };
+            let res =
+                match BLS::<Config>::verify(&parameters, &public_key, &message_bytes, &signature) {
+                    Ok(sig_rlt) => sig_rlt,
+                    Err(_err) => false,
+                };
 
             println!("test_case: {:?}, rst: {:?}", test_case, res);
             assert_eq!(test_case.output, res);
@@ -263,17 +274,19 @@ mod tests {
         for test_case in test_cases {
             let mut sigs = Vec::new();
             for sign_str in &test_case.input {
-                sigs.push(Signature::try_from(&sign_str[2..]).unwrap());
+                sigs.push(Signature::<Config>::try_from(&sign_str[2..]).unwrap());
             }
 
-            let aggregated_sig = Signature::aggregate(&sigs);
+            let aggregated_sig = Signature::<Config>::aggregate(&sigs);
 
             match test_case.output {
-                None => if let Some(_aggr_sig) = aggregated_sig {
-                    panic!("Expected the result of aggregate to be null, but not null");
+                None => {
+                    if let Some(_aggr_sig) = aggregated_sig {
+                        panic!("Expected the result of aggregate to be null, but not null");
+                    }
                 }
                 Some(output) => {
-                    let aggr_sig_str:String =  aggregated_sig.unwrap().into();
+                    let aggr_sig_str: String = aggregated_sig.unwrap().into();
                     assert_eq!(&output[2..], &aggr_sig_str);
                 }
             }
@@ -284,28 +297,33 @@ mod tests {
     fn test_pubkey_aggr_verify() {
         let test_cases = read_pubkey_aggr_verify_test_cases();
 
-        for test_case in test_cases { 
-            let mut signature = Signature::default();
-            match Signature::try_from(&test_case.input.signature[2..]) {
+        for test_case in test_cases {
+            let mut signature = Signature::<Config>::default();
+            match Signature::<Config>::try_from(&test_case.input.signature[2..]) {
                 Ok(signature_org) => signature = signature_org,
                 Err(_err) => assert_eq!(test_case.output, false),
             }
 
             let mut pubic_keys = Vec::new();
             for pubkey_str in &test_case.input.pubkeys {
-                pubic_keys.push(PublicKey::try_from(&pubkey_str[2..]).unwrap());
+                pubic_keys.push(PublicKey::<Config>::try_from(&pubkey_str[2..]).unwrap());
             }
 
-            let mut aggregated_pubkey = PublicKey::default();
-            match PublicKey::aggregate(&pubic_keys) {
+            let mut aggregated_pubkey = PublicKey::<Config>::default();
+            match PublicKey::<Config>::aggregate(&pubic_keys) {
                 Some(public_key_org) => aggregated_pubkey = public_key_org,
                 None => assert_eq!(test_case.output, false),
             }
-            
-            let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
-            let parameters = Parameters::default();
 
-            let res = match BLS::verify(&parameters, &aggregated_pubkey, &message_bytes, &signature) {
+            let message_bytes = hex::decode(&test_case.input.message[2..]).unwrap();
+            let parameters = Parameters::<Config>::default();
+
+            let res = match BLS::<Config>::verify(
+                &parameters,
+                &aggregated_pubkey,
+                &message_bytes,
+                &signature,
+            ) {
                 Ok(sig_rlt) => sig_rlt,
                 Err(_err) => false,
             };
@@ -319,12 +337,12 @@ mod tests {
     fn test_deser_g1() {
         let test_cases = read_deser_g1_test_cases();
 
-        for test_case in test_cases { 
-            let deser_rst = match PublicKey::try_from(&test_case.input.pubkey[..]) {
+        for test_case in test_cases {
+            let deser_rst = match PublicKey::<Config>::try_from(&test_case.input.pubkey[..]) {
                 Ok(_pubkey) => true,
                 Err(_err) => false,
             };
-             
+
             println!("test_case: {:?}, rst: {:?}", test_case, deser_rst);
             assert_eq!(test_case.output, deser_rst);
         }
@@ -334,16 +352,14 @@ mod tests {
     fn test_deser_g2() {
         let test_cases = read_deser_g2_test_cases();
 
-        for test_case in test_cases { 
-            let deser_rst = match Signature::try_from(&test_case.input.signature[..]) {
+        for test_case in test_cases {
+            let deser_rst = match Signature::<Config>::try_from(&test_case.input.signature[..]) {
                 Ok(_pubkey) => true,
                 Err(_err) => false,
             };
-            
+
             println!("test_case: {:?}, rst: {:?}", test_case, deser_rst);
             assert_eq!(test_case.output, deser_rst);
         }
     }
-
 }
-
